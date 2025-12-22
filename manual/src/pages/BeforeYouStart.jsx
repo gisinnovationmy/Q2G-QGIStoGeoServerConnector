@@ -178,7 +178,7 @@ const BeforeYouStart = () => {
           <div className="checklist">
             <div className="checklist-item">
               <input type="checkbox" id="check1" disabled />
-              <label htmlFor="check1">QGIS 3.x or later installed</label>
+              <label htmlFor="check1">QGIS 3.40 or later installed</label>
             </div>
             <div className="checklist-item">
               <input type="checkbox" id="check2" disabled />

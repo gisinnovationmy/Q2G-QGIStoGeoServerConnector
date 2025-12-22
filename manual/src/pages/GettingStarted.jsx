@@ -33,7 +33,7 @@ const GettingStarted = () => {
         <section>
           <h2>System Requirements</h2>
           <ul>
-            <li>QGIS 3.x or later</li>
+            <li>QGIS 3.40 or later</li>
             <li>GeoServer 2.20 or later</li>
             <li>Python 3.6+</li>
             <li>Network access to GeoServer</li>

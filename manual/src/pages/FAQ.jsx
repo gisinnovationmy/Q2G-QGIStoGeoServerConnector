@@ -74,7 +74,7 @@ const FAQ = () => {
     {
       id: 14,
       question: 'What QGIS versions are supported?',
-      answer: 'GeoServerConnector requires QGIS 3.x or later. It has been tested with QGIS 3.20 and newer versions.'
+      answer: 'GeoServerConnector requires QGIS 3.40 or later. It has been tested with QGIS 3.40 and newer versions.'
     },
     {
       id: 15,

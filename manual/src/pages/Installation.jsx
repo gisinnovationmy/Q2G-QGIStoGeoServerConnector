@@ -65,7 +65,7 @@ const Installation = () => {
           <h3>Troubleshooting Installation</h3>
           <p>If the plugin doesn't appear:</p>
           <ul>
-            <li>Check that you're using QGIS 3.x or later</li>
+            <li>Check that you're using QGIS 3.40 or later</li>
             <li>Verify the plugin folder is in the correct location</li>
             <li>Restart QGIS completely</li>
             <li>Check the QGIS log for error messages</li>
