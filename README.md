@@ -34,6 +34,10 @@ Use the QGIS Plugins menu to install the Q2G - QGIS to GeoServer Connector, [QGI
   <img src="images/Q2G-QGIStoGeoServerConnector.png" alt="Alt text">
 </p>
 
+<p align="center">
+  <img src="images/Q2G-QGIStoGeoServerConnectorMap.png" alt="Alt text">
+</p>
+
 The Q2G - QGIS to GeoServer Connector interface is organized into four main sections:
 
 - **Connection Settings Panel**: Configure GeoServer URL, credentials, and connection parameters
