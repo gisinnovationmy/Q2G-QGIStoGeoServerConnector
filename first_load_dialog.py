@@ -108,7 +108,7 @@ class FirstLoadDialog(QDialog):
         content_layout.addWidget(self._create_section(
             "✅ Quick Checklist",
             "Before you start, make sure you have:\n\n"
-            "☐ QGIS 3.40 or later\n"
+            "☐ QGIS 3.x or later\n"
             "☐ GeoServer 2.20 or later\n"
             "☐ GeoServer Importer extension installed\n"
             "☐ GeoServer admin credentials\n"

@@ -227,6 +227,7 @@ class PreviewDialog(QDialog):
         self.is_webview_loading = True
         self._js_call_queue = []
         self._reload_after_library_change = False  # Flag for library mode toggle
+        self.pending_search_text = ""  # Store search text to apply after loading
         self.init_theme_state()
         
     def log_message(self, message, level=Qgis.Info):
@@ -691,6 +692,9 @@ class PreviewDialog(QDialog):
         self.load_layers_button.setText("⏳ Loading...")
         self.load_layers_button.setEnabled(False)
         
+        # Disconnect textChanged signal to prevent filter_layers from interfering
+        self.search_box.textChanged.disconnect()
+        
         # Start the loading thread
         self.loading_thread = LayerLoadingThread(self.geoserver_url, self.username, self.password, parent=self)
         self.loading_thread.layers_loaded.connect(self.on_layers_loaded)
@@ -700,7 +704,6 @@ class PreviewDialog(QDialog):
 
     @pyqtSlot(list)
     def on_layers_loaded(self, layers):
-        self.layers_list.clear()
         self.log_message(f"on_layers_loaded called with {len(layers)} layers")
         
         # Debug: Print layer types
@@ -710,17 +713,54 @@ class PreviewDialog(QDialog):
         self.log_message(f"Layer types received: {layer_types}")
         
         if not layers:
+            self.layers_list.clear()
             self.layers_list.addItem("No layers found.")
             return
 
         self.all_layers = sorted(layers, key=lambda x: x['display_name'])
-        for layer_data in self.all_layers:
+        self.log_message(f"Successfully loaded {len(self.all_layers)} layers.")
+        
+        # Get search text from search box
+        search_text = self.search_box.text().strip()
+        self.log_message(f"🔍 on_layers_loaded: search_box.text()='{search_text}' (len={len(search_text)})")
+        
+        # Clear the list
+        self.layers_list.clear()
+        
+        # If search text exists, filter layers; otherwise show all
+        if search_text:
+            self.log_message(f"🔍 Search text found, filtering...")
+            try:
+                from wildcard_filter import WildcardFilter
+            except ImportError:
+                try:
+                    from .wildcard_filter import WildcardFilter
+                except ImportError:
+                    import wildcard_filter as wf
+                    WildcardFilter = wf.WildcardFilter
+            
+            filtered_layers = [layer for layer in self.all_layers 
+                             if WildcardFilter.matches_pattern(layer['display_name'], search_text)]
+            self.log_message(f"🔍 Filtered result: {len(filtered_layers)} layers match '{search_text}'")
+            for layer in filtered_layers[:3]:
+                self.log_message(f"  - {layer['display_name']}")
+            layers_to_show = filtered_layers
+        else:
+            self.log_message(f"🔍 No search text, showing all {len(self.all_layers)} layers")
+            layers_to_show = self.all_layers
+        
+        # Populate the list
+        self.log_message(f"🔍 Populating list with {len(layers_to_show)} layers")
+        for layer_data in layers_to_show:
             item = QListWidgetItem(layer_data['display_name'])
-            # Store the whole dictionary for access to layer_type
             item.setData(Qt.UserRole, layer_data)
             self.layers_list.addItem(item)
-            self.log_message(f"Added to UI: {layer_data['display_name']} ({layer_data.get('layer_type', 'Unknown')})")
-        self.log_message(f"Successfully loaded {len(self.all_layers)} layers to UI.")
+        
+        self.log_message(f"🔍 List now contains {self.layers_list.count()} items")
+        
+        # Reconnect textChanged signal now that filtering is complete
+        self.search_box.textChanged.connect(self.filter_layers)
+        self.log_message(f"🔍 textChanged signal reconnected")
 
     @pyqtSlot(str)
     def on_loading_error(self, error_message):
@@ -2953,6 +2993,82 @@ class PreviewDialog(QDialog):
             self.added_layers_tree.setCurrentItem(selected_item)
             self.refresh_layer_order()
 
+    def move_layer_to_top(self):
+        selected_item = self.added_layers_tree.currentItem()
+        if not selected_item:
+            return
+        index = self.added_layers_tree.indexOfTopLevelItem(selected_item)
+        if index > 0:
+            # Preserve state
+            layer_id = selected_item.data(0, Qt.UserRole)
+            prev_cb = self.added_layers_tree.itemWidget(selected_item, 0)
+            prev_sl = self.added_layers_tree.itemWidget(selected_item, 2)
+            prev_checked = prev_cb.isChecked() if prev_cb is not None else True
+            prev_value = prev_sl.value() if prev_sl is not None else 100
+
+            # Move item to top
+            self.added_layers_tree.takeTopLevelItem(index)
+            self.added_layers_tree.insertTopLevelItem(0, selected_item)
+
+            # Recreate and attach widgets with preserved state
+            new_cb = QCheckBox()
+            new_cb.setChecked(prev_checked)
+            new_cb.stateChanged.connect(lambda state, l_id=layer_id: self.toggle_layer_visibility(l_id, state == Qt.Checked))
+            self.added_layers_tree.setItemWidget(selected_item, 0, new_cb)
+
+            new_sl = QSlider(Qt.Horizontal)
+            new_sl.setRange(0, 100)
+            new_sl.setValue(prev_value)
+            new_sl.setToolTip("Adjust layer transparency")
+            new_sl.valueChanged.connect(lambda value, l_id=layer_id: self.on_transparency_changed(l_id, value))
+            self.added_layers_tree.setItemWidget(selected_item, 2, new_sl)
+
+            # Update stored refs
+            if layer_id in self.added_layers:
+                self.added_layers[layer_id]['visibility_widget'] = new_cb
+                self.added_layers[layer_id]['slider_widget'] = new_sl
+
+            self.added_layers_tree.setCurrentItem(selected_item)
+            self.refresh_layer_order()
+
+    def move_layer_to_bottom(self):
+        selected_item = self.added_layers_tree.currentItem()
+        if not selected_item:
+            return
+        index = self.added_layers_tree.indexOfTopLevelItem(selected_item)
+        if index < self.added_layers_tree.topLevelItemCount() - 1:
+            # Preserve state
+            layer_id = selected_item.data(0, Qt.UserRole)
+            prev_cb = self.added_layers_tree.itemWidget(selected_item, 0)
+            prev_sl = self.added_layers_tree.itemWidget(selected_item, 2)
+            prev_checked = prev_cb.isChecked() if prev_cb is not None else True
+            prev_value = prev_sl.value() if prev_sl is not None else 100
+
+            # Move item to bottom
+            self.added_layers_tree.takeTopLevelItem(index)
+            self.added_layers_tree.insertTopLevelItem(self.added_layers_tree.topLevelItemCount(), selected_item)
+
+            # Recreate and attach widgets with preserved state
+            new_cb = QCheckBox()
+            new_cb.setChecked(prev_checked)
+            new_cb.stateChanged.connect(lambda state, l_id=layer_id: self.toggle_layer_visibility(l_id, state == Qt.Checked))
+            self.added_layers_tree.setItemWidget(selected_item, 0, new_cb)
+
+            new_sl = QSlider(Qt.Horizontal)
+            new_sl.setRange(0, 100)
+            new_sl.setValue(prev_value)
+            new_sl.setToolTip("Adjust layer transparency")
+            new_sl.valueChanged.connect(lambda value, l_id=layer_id: self.on_transparency_changed(l_id, value))
+            self.added_layers_tree.setItemWidget(selected_item, 2, new_sl)
+
+            # Update stored refs
+            if layer_id in self.added_layers:
+                self.added_layers[layer_id]['visibility_widget'] = new_cb
+                self.added_layers[layer_id]['slider_widget'] = new_sl
+
+            self.added_layers_tree.setCurrentItem(selected_item)
+            self.refresh_layer_order()
+
     def refresh_layer_order(self):
         layer_ids = []
         for i in range(self.added_layers_tree.topLevelItemCount()):
@@ -2964,6 +3080,15 @@ class PreviewDialog(QDialog):
         js_call = f"refreshLayerOrder({json.dumps(layer_ids)});"
         self.web_view.page().runJavaScript(js_call)
 
+    @pyqtSlot(list)
+    def on_layers_reordered_by_drag(self, layer_ids):
+        """Handle layer reordering when items are dragged and dropped in the tree."""
+        try:
+            self._reattach_added_tree_widgets()
+            self.refresh_layer_order()
+        except Exception as e:
+            self.log_message(f"Error handling layer reordering: {e}", level=Qgis.Warning)
+
     def toggle_sort_order(self, event):
         self.sort_order = 'desc' if self.sort_order == 'asc' else 'asc'
         self.header_label.setText(f"Available Layers (Click to sort: {'Z-A' if self.sort_order == 'desc' else 'A-Z'})")
@@ -2972,10 +3097,28 @@ class PreviewDialog(QDialog):
     def filter_layers(self, text):
         """
         Filter layers based on wildcard pattern (* and ? wildcards).
+        If text is typed and no layers are loaded yet, automatically load them.
         
         Args:
             text: Search pattern with optional wildcards (* for any chars, ? for single char)
         """
+        self.log_message(f"DEBUG filter_layers: text='{text}', all_layers count={len(self.all_layers) if self.all_layers else 0}")
+        
+        # Store the search text for use after loading
+        self.pending_search_text = text
+        
+        # If text is provided but no layers loaded yet, start loading
+        if text.strip() and not self.all_layers:
+            self.log_message(f"DEBUG: Text provided but no layers loaded, starting layer loading")
+            self.start_layer_loading()
+            return
+        
+        # If no layers at all, just clear and return
+        if not self.all_layers:
+            self.log_message(f"DEBUG: No layers at all, clearing list")
+            self.layers_list.clear()
+            return
+        
         try:
             from wildcard_filter import WildcardFilter
         except ImportError:
@@ -2991,10 +3134,12 @@ class PreviewDialog(QDialog):
         # If no text, show all layers
         if not text.strip():
             filtered_layers = self.all_layers[:]
+            self.log_message(f"DEBUG: No search text, showing all {len(filtered_layers)} layers")
         else:
             # Use wildcard filter for pattern matching
             filtered_layers = [layer for layer in self.all_layers 
                              if WildcardFilter.matches_pattern(layer['display_name'], text)]
+            self.log_message(f"DEBUG: Filtering with text '{text}', found {len(filtered_layers)} matching layers")
         
         # Sort based on current sort order
         if self.sort_order == 'asc':
@@ -3007,6 +3152,8 @@ class PreviewDialog(QDialog):
             # Store the full dict to keep access to layer_type and other attributes
             item.setData(Qt.UserRole, layer_data)
             self.layers_list.addItem(item)
+        
+        self.log_message(f"Filtered layers: {len(filtered_layers)} results for search '{text}'")
 
     def toggle_base_layer(self, state):
         visible = state == Qt.Checked
@@ -3276,44 +3423,10 @@ class PreviewDialog(QDialog):
         # Delegate to the master visibility handler
         self.master_visibility_handler.update_select_all_checkbox_state()
 
-    def refresh_layer_order(self):
-        layer_ids = []
-        for i in range(self.added_layers_tree.topLevelItemCount()):
-            item = self.added_layers_tree.topLevelItem(i)
-            layer_id = item.data(0, Qt.UserRole)
-            layer_ids.append(layer_id)
-        
-        layer_ids.reverse() # OpenLayers draws layers from bottom up
-        js_call = f"refreshLayerOrder({json.dumps(layer_ids)});"
-        self.web_view.page().runJavaScript(js_call)
-
-    def filter_layers(self, text):
-        for i in range(self.layers_list.count()):
-            item = self.layers_list.item(i)
-            item.setHidden(text.lower() not in item.text().lower())
-
-    def toggle_sort_order(self, event):
-        self.sort_order = 'desc' if self.sort_order == 'asc' else 'asc'
-        self.header_label.setText(f"Available Layers (Click to sort: {'Z-A' if self.sort_order == 'desc' else 'A-Z'})")
-        self.all_layers.sort(key=lambda x: x['display_name'], reverse=self.sort_order == 'desc')
-        self.layers_list.clear()
-        for layer_data in self.all_layers:
-            item = QListWidgetItem(layer_data['display_name'])
-            item.setData(Qt.UserRole, layer_data['actual_name'])
-            self.layers_list.addItem(item)
-        self.filter_layers(self.search_box.text())
-
-
     def toggle_base_layer(self, state):
         visible = state == Qt.Checked
         js_call = f"toggleBaseLayer({str(visible).lower()});"
         self.web_view.page().runJavaScript(js_call)
-
-
-    def on_available_layer_double_clicked(self, item):
-        """Handle double-click on an available layer to add it to the map."""
-        self.layers_list.setCurrentItem(item)
-        self.add_layers_to_map()
 
     def on_added_layer_double_clicked(self, item, column):
         """Handle double-click on an added layer to zoom to its extent."""

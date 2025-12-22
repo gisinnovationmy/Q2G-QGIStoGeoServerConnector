@@ -171,4 +171,5 @@ For questions and discussions, please use the GitHub discussions section or QGIS
 
 ---
 
+
 *Last updated: December 2025*

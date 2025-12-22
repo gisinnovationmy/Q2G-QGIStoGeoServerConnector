@@ -2,7 +2,7 @@
 name=Q2G - QGIS to GeoServer Connector
 qgisMinimumVersion=3.40
 description=A powerful QGIS plugin for uploading, managing, and styling geospatial data on GeoServer. Perfect for Malaysia GIS Training and professional geospatial workflows.
-version=0.9.2
+version=0.9.3
 author=GIS Innovation Sdn. Bhd.
 email=mygis@gis.my
 
@@ -22,3 +22,6 @@ deprecated=False
 changelog=Experimental
           0.9.2
           - Initial release of the experimental plugin.
+
+          0.9.3
+          - Minor bug fixes.

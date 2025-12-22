@@ -1,11 +1,19 @@
 import os
 from PyQt5.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QListWidget, 
-    QPushButton, QTreeWidget, QCheckBox, QRadioButton, QButtonGroup, 
-    QAbstractItemView, QListWidgetItem, QScrollArea, QGroupBox
+    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton, 
+    QListWidget, QAbstractItemView, QTreeWidget, QTreeWidgetItem, QCheckBox,
+    QSlider, QScrollArea, QRadioButton, QButtonGroup, QGroupBox, QGridLayout
 )
 from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QIcon
+
+try:
+    from .draggable_layers_tree import DraggableLayersTree
+except ImportError:
+    try:
+        from draggable_layers_tree import DraggableLayersTree
+    except ImportError:
+        DraggableLayersTree = QTreeWidget
 
 class LeftPanel(QWidget):
     def __init__(self, plugin_dir, is_dark_theme, parent=None):
@@ -102,7 +110,7 @@ class LeftPanel(QWidget):
         btn_layout_row2.addWidget(self.load_state_button, 1)
         btn_layout_row2.addWidget(self.clear_button, 1)
 
-        self.added_layers_tree = QTreeWidget()
+        self.added_layers_tree = DraggableLayersTree()
         self.added_layers_tree.setHeaderLabels(["Visibility", "Layer Name", "Transparency"])
         self.added_layers_tree.setColumnWidth(0, 60)
         self.added_layers_tree.setColumnWidth(1, 180)
@@ -117,10 +125,16 @@ class LeftPanel(QWidget):
         reorder_layout = QHBoxLayout()
         self.move_up_btn = QPushButton("▲ Move Up")
         self.move_up_btn.setMinimumHeight(32)
+        self.move_to_top_btn = QPushButton("⬆ Top")
+        self.move_to_top_btn.setMinimumHeight(32)
         self.move_down_btn = QPushButton("▼ Move Down")
         self.move_down_btn.setMinimumHeight(32)
+        self.move_to_bottom_btn = QPushButton("⬇ Bottom")
+        self.move_to_bottom_btn.setMinimumHeight(32)
         reorder_layout.addWidget(self.move_up_btn, 1)
+        reorder_layout.addWidget(self.move_to_top_btn, 1)
         reorder_layout.addWidget(self.move_down_btn, 1)
+        reorder_layout.addWidget(self.move_to_bottom_btn, 1)
 
         self.zoom_btn = QPushButton("Zoom to Layer")
         self.zoom_btn.setMinimumHeight(32)
@@ -204,9 +218,15 @@ class LeftPanel(QWidget):
         self.clear_button.clicked.connect(main_dialog.clear_openlayers_map)
         
         self.added_layers_tree.itemDoubleClicked.connect(main_dialog.on_added_layer_double_clicked)
+        self.move_to_top_btn.clicked.connect(main_dialog.move_layer_to_top)
         self.move_up_btn.clicked.connect(main_dialog.move_layer_up)
         self.move_down_btn.clicked.connect(main_dialog.move_layer_down)
+        self.move_to_bottom_btn.clicked.connect(main_dialog.move_layer_to_bottom)
         self.zoom_btn.clicked.connect(main_dialog.zoom_to_selected_layer)
+        
+        # Connect drag-and-drop reordering signal if available
+        if hasattr(self.added_layers_tree, 'layers_reordered'):
+            self.added_layers_tree.layers_reordered.connect(main_dialog.on_layers_reordered_by_drag)
         
         # Connect base map mode radio buttons
         self.rb_base_none.toggled.connect(main_dialog._on_base_map_mode_changed)
