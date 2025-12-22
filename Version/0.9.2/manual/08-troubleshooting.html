@@ -1,0 +1,499 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Troubleshooting - Q2G v0.9.2 (Beta) Manual | QGIS GeoServer Connector</title>
+    <meta name="description" content="Troubleshooting guide for Q2G v0.9.2 (Beta). Solutions to common issues and error messages.">
+    <meta name="keywords" content="QGIS, GeoServer, Q2G, troubleshooting, Malaysia GIS Training">
+    <link rel="stylesheet" href="style.css">
+    <style>
+        /* Olive Branch Theme (#13) */
+        :root { --olive-primary: #6B7B3C; --olive-secondary: #8FA058; --olive-light: #F4F6EE; --olive-lighter: #F9FAF6; --olive-dark: #454F28; --olive-text: #4A5530; }
+        body { background: linear-gradient(145deg, var(--olive-lighter) 0%, var(--olive-light) 50%, #EEF2E6 100%); }
+        .page-header { background: linear-gradient(135deg, rgba(255,255,255,0.98) 0%, rgba(249,250,246,0.98) 100%); box-shadow: 0 8px 32px rgba(107,123,60,0.12); border: 1px solid rgba(244,246,238,0.9); }
+        .page-header::before { background: linear-gradient(90deg, var(--olive-primary), var(--olive-secondary), #A8B86D); }
+        .page-header h1 { color: var(--olive-dark); } .page-header p { color: var(--olive-text); }
+        .content { background: rgba(255, 255, 255, 0.97); box-shadow: 0 8px 32px rgba(107,123,60,0.1); border: 1px solid rgba(244,246,238,0.9); }
+        h2 { color: var(--olive-dark); border-bottom-color: var(--olive-secondary); } h3 { color: var(--olive-primary); }
+        .toc { background: linear-gradient(145deg, #FFFFFF 0%, var(--olive-light) 100%); border: 1px solid rgba(143,160,88,0.2); }
+        .toc a { color: var(--olive-text); background: rgba(255,255,255,0.7); }
+        .toc a:hover { color: var(--olive-dark); background: var(--olive-light); }
+        .format-table th { background: linear-gradient(135deg, var(--olive-primary) 0%, var(--olive-secondary) 100%); }
+        .format-table tr:hover { background: var(--olive-lighter); }
+        .error { background: linear-gradient(135deg, #FFEBEE 0%, #FFCDD2 100%); border-left-color: #D32F2F; color: #B71C1C; }
+        .warning { background: linear-gradient(135deg, #FFF8E1 0%, #FFECB3 100%); border-left-color: #F0AD4E; color: #8A6D3B; }
+        .note { background: linear-gradient(135deg, #F0F4E8 0%, var(--olive-light) 100%); border-left-color: var(--olive-primary); color: var(--olive-dark); }
+        a { color: var(--olive-primary); } a:hover { color: var(--olive-secondary); }
+        code, pre { background: var(--olive-light); color: var(--olive-dark); }
+        .back-to-top { background: linear-gradient(135deg, var(--olive-primary) 0%, var(--olive-secondary) 100%); }
+        .back-to-top:hover { background: linear-gradient(135deg, var(--olive-dark) 0%, var(--olive-primary) 100%); }
+        footer { background: rgba(255, 255, 255, 0.95); box-shadow: 0 4px 16px rgba(107,123,60,0.08); }
+    </style>
+</head>
+<body id="top">
+    <div class="container">
+        <nav class="breadcrumb">
+            <a href="index.html">Home</a> / Troubleshooting
+        </nav>
+        
+        <header class="page-header">
+            <h1>🔧 Troubleshooting Guide</h1>
+            <p>Solutions to common issues and error messages</p>
+        </header>
+        
+        <main class="content">
+            <nav class="toc">
+                <h3>On This Page</h3>
+                <ul>
+                    <li><a href="#connection">Connection Issues</a></li>
+                    <li><a href="#upload">Upload Issues</a></li>
+                    <li><a href="#style">Style Issues</a></li>
+                    <li><a href="#workspace">Workspace Issues</a></li>
+                    <li><a href="#postgis">PostGIS Issues</a></li>
+                    <li><a href="#performance">Performance Issues</a></li>
+                    <li><a href="#help">Getting Help</a></li>
+                    <li><a href="#errors">Common Errors</a></li>
+                </ul>
+            </nav>
+            
+            <section id="connection">
+                <h2>Q2G Issues</h2>
+                
+                <h3>Cannot Connect to GeoServer</h3>
+                <div class="error">
+                    <strong>Error:</strong> "Connection refused" or "Unable to connect"
+                </div>
+                
+                <p><strong>Causes:</strong></p>
+                <ul>
+                    <li>GeoServer is not running</li>
+                    <li>Incorrect GeoServer URL</li>
+                    <li>Network connectivity issues</li>
+                    <li>Firewall blocking connection</li>
+                </ul>
+                
+                <p><strong>Solutions:</strong></p>
+                <ol>
+                    <li>Verify GeoServer is running:
+                        <pre>http://localhost:8080/geoserver/web/</pre>
+                    </li>
+                    <li>Check the GeoServer URL in Q2G</li>
+                    <li>Verify network connectivity to the server</li>
+                    <li>Check firewall rules allow port 8080</li>
+                    <li>Try using the IP address instead of hostname</li>
+                </ol>
+                
+                <h3>Authentication Failed</h3>
+                <div class="error">
+                    <strong>Error:</strong> "Authentication failed" or "Unauthorized"
+                </div>
+                
+                <p><strong>Causes:</strong></p>
+                <ul>
+                    <li>Incorrect username or password</li>
+                    <li>User doesn't have admin privileges</li>
+                    <li>User account is disabled</li>
+                </ul>
+                
+                <p><strong>Solutions:</strong></p>
+                <ol>
+                    <li>Verify username and password are correct</li>
+                    <li>Check if the user has admin role in GeoServer</li>
+                    <li>Try logging in to GeoServer web interface directly</li>
+                    <li>Reset the password if needed</li>
+                    <li>Check if the user account is active</li>
+                </ol>
+                
+                <h3>Connection Timeout</h3>
+                <div class="error">
+                    <strong>Error:</strong> "Connection timeout" or "Request timed out"
+                </div>
+                
+                <p><strong>Causes:</strong></p>
+                <ul>
+                    <li>GeoServer is slow to respond</li>
+                    <li>Network latency is high</li>
+                    <li>GeoServer is overloaded</li>
+                </ul>
+                
+                <p><strong>Solutions:</strong></p>
+                <ol>
+                    <li>Check your internet connection speed</li>
+                    <li>Try again later if GeoServer is busy</li>
+                    <li>Check GeoServer logs for errors</li>
+                    <li>Increase timeout values if possible</li>
+                    <li>Try uploading smaller files</li>
+                </ol>
+            </section>
+            
+            <section id="upload">
+                <h2>Upload Issues</h2>
+                
+                <h3>Layer Already Exists</h3>
+                <div class="error">
+                    <strong>Error:</strong> "Layer already exists" or "Datastore already exists"
+                </div>
+                
+                <p><strong>Causes:</strong></p>
+                <ul>
+                    <li>Layer with same name already on GeoServer</li>
+                    <li>Auto-Overwrite option is disabled</li>
+                </ul>
+                
+                <p><strong>Solutions:</strong></p>
+                <ol>
+                    <li>Enable "Auto-Overwrite" option to replace existing layer</li>
+                    <li>Rename the layer in QGIS</li>
+                    <li>Delete the existing layer on GeoServer first</li>
+                    <li>Use a different workspace</li>
+                </ol>
+                
+                <h3>Invalid CRS</h3>
+                <div class="error">
+                    <strong>Error:</strong> "Invalid CRS" or "No CRS defined"
+                </div>
+                
+                <p><strong>Causes:</strong></p>
+                <ul>
+                    <li>Layer doesn't have a CRS defined</li>
+                    <li>CRS is invalid or corrupted</li>
+                </ul>
+                
+                <p><strong>Solutions:</strong></p>
+                <ol>
+                    <li>Right-click layer in QGIS → Set Layer CRS</li>
+                    <li>Choose the correct CRS for your data</li>
+                    <li>Verify the CRS is valid</li>
+                    <li>Try re-projecting the layer</li>
+                </ol>
+                
+                <h3>File Too Large</h3>
+                <div class="error">
+                    <strong>Error:</strong> "File too large" or "Upload failed"
+                </div>
+                
+                <p><strong>Causes:</strong></p>
+                <ul>
+                    <li>File exceeds GeoServer upload limit</li>
+                    <li>Not enough disk space on GeoServer</li>
+                </ul>
+                
+                <p><strong>Solutions:</strong></p>
+                <ol>
+                    <li>Split large files into smaller chunks</li>
+                    <li>Compress the file (use GeoPackage instead of Shapefile)</li>
+                    <li>Increase GeoServer upload limit</li>
+                    <li>Free up disk space on GeoServer</li>
+                    <li>Upload to a different GeoServer instance</li>
+                </ol>
+                
+                <h3>Invalid Geometry</h3>
+                <div class="error">
+                    <strong>Error:</strong> "Invalid geometry" or "Geometry error"
+                </div>
+                
+                <p><strong>Causes:</strong></p>
+                <ul>
+                    <li>Layer contains invalid geometries</li>
+                    <li>Self-intersecting polygons</li>
+                    <li>Duplicate vertices</li>
+                </ul>
+                
+                <p><strong>Solutions:</strong></p>
+                <ol>
+                    <li>Use Vector → Geometry Tools → Fix Geometries</li>
+                    <li>Check for topology errors</li>
+                    <li>Remove invalid features</li>
+                    <li>Re-export the layer</li>
+                </ol>
+            </section>
+            
+            <section id="style">
+                <h2>Style Issues</h2>
+                
+                <h3>Style Not Applied</h3>
+                <div class="error">
+                    <strong>Error:</strong> "Style not applied" or "Default style shown"
+                </div>
+                
+                <p><strong>Causes:</strong></p>
+                <ul>
+                    <li>Style upload failed</li>
+                    <li>Style not associated with layer</li>
+                    <li>Style name mismatch</li>
+                </ul>
+                
+                <p><strong>Solutions:</strong></p>
+                <ol>
+                    <li>Check upload log for style errors</li>
+                    <li>Try uploading the style again</li>
+                    <li>Verify the style exists on GeoServer</li>
+                    <li>Check if the style is associated with the layer</li>
+                    <li>Manually associate the style in GeoServer</li>
+                </ol>
+                
+                <h3>Style Looks Different</h3>
+                <div class="error">
+                    <strong>Issue:</strong> "Style renders differently on GeoServer"
+                </div>
+                
+                <p><strong>Causes:</strong></p>
+                <ul>
+                    <li>QGIS style features not supported in SLD</li>
+                    <li>Color space differences</li>
+                    <li>Font availability differences</li>
+                </ul>
+                
+                <p><strong>Solutions:</strong></p>
+                <ol>
+                    <li>Simplify the QGIS style</li>
+                    <li>Use standard fonts available on GeoServer</li>
+                    <li>Test the style in a web browser</li>
+                    <li>Manually edit the SLD on GeoServer</li>
+                    <li>Use basic colors and symbols</li>
+                </ol>
+                
+                <h3>SLD Export Error</h3>
+                <div class="error">
+                    <strong>Error:</strong> "Failed to export SLD" or "SLD generation error"
+                </div>
+                
+                <p><strong>Causes:</strong></p>
+                <ul>
+                    <li>Complex layer style</li>
+                    <li>Missing layer properties</li>
+                    <li>Unsupported style features</li>
+                </ul>
+                
+                <p><strong>Solutions:</strong></p>
+                <ol>
+                    <li>Simplify the layer style</li>
+                    <li>Remove complex effects</li>
+                    <li>Check layer CRS and geometry</li>
+                    <li>Try with a basic single-symbol style</li>
+                </ol>
+            </section>
+            
+            <section id="workspace">
+                <h2>Workspace Issues</h2>
+                
+                <h3>Cannot Create Workspace</h3>
+                <div class="error">
+                    <strong>Error:</strong> "Failed to create workspace"
+                </div>
+                
+                <p><strong>Causes:</strong></p>
+                <ul>
+                    <li>Workspace name already exists</li>
+                    <li>Invalid workspace name</li>
+                    <li>Permission denied</li>
+                </ul>
+                
+                <p><strong>Solutions:</strong></p>
+                <ol>
+                    <li>Use a unique workspace name</li>
+                    <li>Use only alphanumeric characters and underscores</li>
+                    <li>Verify you have admin permissions</li>
+                    <li>Check GeoServer logs for errors</li>
+                </ol>
+                
+                <h3>Workspace Not Appearing</h3>
+                <div class="error">
+                    <strong>Issue:</strong> "Created workspace not showing in list"
+                </div>
+                
+                <p><strong>Causes:</strong></p>
+                <ul>
+                    <li>Workspace list not refreshed</li>
+                    <li>Workspace creation failed silently</li>
+                </ul>
+                
+                <p><strong>Solutions:</strong></p>
+                <ol>
+                    <li>Click "Refresh" button to reload workspace list</li>
+                    <li>Check GeoServer web interface for workspace</li>
+                    <li>Try creating the workspace again</li>
+                </ol>
+            </section>
+            
+            <section id="postgis">
+                <h2>PostGIS Issues</h2>
+                
+                <h3>PostGIS Connection Failed</h3>
+                <div class="error">
+                    <strong>Error:</strong> "Cannot connect to PostGIS" or "Database connection failed"
+                </div>
+                
+                <p><strong>Causes:</strong></p>
+                <ul>
+                    <li>Database server not running</li>
+                    <li>Incorrect connection parameters</li>
+                    <li>Database doesn't exist</li>
+                    <li>User doesn't have permissions</li>
+                </ul>
+                
+                <p><strong>Solutions:</strong></p>
+                <ol>
+                    <li>Verify PostgreSQL is running</li>
+                    <li>Check connection parameters (host, port, database, user)</li>
+                    <li>Verify database exists</li>
+                    <li>Check user has SELECT permissions</li>
+                    <li>Test connection using psql command line</li>
+                </ol>
+                
+                <h3>PostGIS Layer Not Found</h3>
+                <div class="error">
+                    <strong>Error:</strong> "PostGIS layer not found" or "Table doesn't exist"
+                </div>
+                
+                <p><strong>Causes:</strong></p>
+                <ul>
+                    <li>Table doesn't exist in database</li>
+                    <li>Table name is incorrect</li>
+                    <li>User doesn't have access to table</li>
+                </ul>
+                
+                <p><strong>Solutions:</strong></p>
+                <ol>
+                    <li>Verify table exists in database</li>
+                    <li>Check table name spelling</li>
+                    <li>Verify user has SELECT permissions on table</li>
+                    <li>Check if table has geometry column</li>
+                </ol>
+            </section>
+            
+            <section id="performance">
+                <h2>Performance Issues</h2>
+                
+                <h3>Slow Upload Speed</h3>
+                <div class="warning">
+                    <strong>Issue:</strong> "Upload is very slow"
+                </div>
+                
+                <p><strong>Causes:</strong></p>
+                <ul>
+                    <li>Large file size</li>
+                    <li>Slow network connection</li>
+                    <li>GeoServer is busy</li>
+                </ul>
+                
+                <p><strong>Solutions:</strong></p>
+                <ol>
+                    <li>Split large files into smaller chunks</li>
+                    <li>Check internet connection speed</li>
+                    <li>Upload during off-peak hours</li>
+                    <li>Reduce file size by filtering data</li>
+                </ol>
+                
+                <h3>Plugin Freezes</h3>
+                <div class="error">
+                    <strong>Issue:</strong> "Q2G becomes unresponsive"
+                </div>
+                
+                <p><strong>Causes:</strong></p>
+                <ul>
+                    <li>Large file processing</li>
+                    <li>Network timeout</li>
+                    <li>Memory issues</li>
+                </ul>
+                
+                <p><strong>Solutions:</strong></p>
+                <ol>
+                    <li>Wait for operation to complete</li>
+                    <li>Close other applications to free memory</li>
+                    <li>Restart QGIS if it remains frozen</li>
+                    <li>Try uploading smaller files</li>
+                </ol>
+            </section>
+            
+            <section id="help">
+                <h2>Getting Help</h2>
+                
+                <h3>Checking Logs</h3>
+                <p>When troubleshooting, check the upload log:</p>
+                <ul>
+                    <li>Look for error messages (red text)</li>
+                    <li>Check for warning messages (orange text)</li>
+                    <li>Review debug messages (blue text)</li>
+                    <li>Copy the log for reference</li>
+                </ul>
+                
+                <h3>GeoServer Logs</h3>
+                <p>For server-side errors, check GeoServer logs:</p>
+                <ol>
+                    <li>Go to GeoServer web interface</li>
+                    <li>Navigate to About → Logs</li>
+                    <li>Look for error messages</li>
+                    <li>Check timestamps match your upload time</li>
+                </ol>
+                
+                <h3>QGIS Logs</h3>
+                <p>For QGIS-related errors:</p>
+                <ol>
+                    <li>Go to Help → Log Messages</li>
+                    <li>Look for Q2G messages</li>
+                    <li>Check for Python errors</li>
+                </ol>
+            </section>
+            
+            <section id="errors">
+                <h2>Common Error Messages</h2>
+                <table class="format-table">
+                    <tr>
+                        <th>Error Message</th>
+                        <th>Meaning</th>
+                        <th>Solution</th>
+                    </tr>
+                    <tr>
+                        <td>Connection refused</td>
+                        <td>Cannot reach GeoServer</td>
+                        <td>Check GeoServer is running and URL is correct</td>
+                    </tr>
+                    <tr>
+                        <td>Unauthorized</td>
+                        <td>Authentication failed</td>
+                        <td>Check username and password</td>
+                    </tr>
+                    <tr>
+                        <td>Layer exists</td>
+                        <td>Layer already on GeoServer</td>
+                        <td>Enable Auto-Overwrite or rename layer</td>
+                    </tr>
+                    <tr>
+                        <td>Invalid CRS</td>
+                        <td>Layer has no CRS</td>
+                        <td>Set layer CRS in QGIS</td>
+                    </tr>
+                    <tr>
+                        <td>File not found</td>
+                        <td>Source file missing</td>
+                        <td>Check file path and permissions</td>
+                    </tr>
+                </table>
+            </section>
+            
+            <section>
+                <h2>Next Steps</h2>
+                <ul>
+                    <li><a href="03-configuration.html">Configuration</a> - Verify your settings</li>
+                    <li><a href="04-layer-upload.html">Layer Upload</a> - Try uploading again</li>
+                    <li><a href="10-faq.html">FAQ</a> - Check frequently asked questions</li>
+                </ul>
+            </section>
+        </main>
+        
+        <footer>
+            <p>&copy; 2025 GIS Innovation Sdn Bhd. All rights reserved.</p>
+        </footer>
+    </div>
+    
+    <a href="#top" class="back-to-top" id="backToTop" title="Back to Top">↑</a>
+    <script>
+        window.addEventListener('scroll', function() {
+            var backToTop = document.getElementById('backToTop');
+            if (window.scrollY > 300) { backToTop.classList.add('visible'); } else { backToTop.classList.remove('visible'); }
+        });
+    </script>
+</body>
+</html>
