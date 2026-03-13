@@ -20,17 +20,9 @@ const BeforeYouStart = () => {
           <h3>Required Components:</h3>
           <ul>
             <li>
-              <strong>pip</strong> - Python package installer (required for installing PyQtWebEngine)
-              <ul>
-                <li>Usually pre-installed with QGIS</li>
-                <li>If not installed, the plugin will prompt you to install it</li>
-                <li>Can be installed manually via OSGeo4W Shell if needed</li>
-              </ul>
-            </li>
-            <li>
               <strong>PyQtWebEngine</strong> - Required for displaying the preview map
               <ul>
-                <li>Automatically installed on first use (requires pip)</li>
+                <li>Automatically installed on first use</li>
                 <li>Requires internet connection for download (~50-100 MB)</li>
                 <li>QGIS must be restarted after installation</li>
               </ul>
@@ -58,25 +50,6 @@ const BeforeYouStart = () => {
               a dialog will appear with an "Install" button. Click it to automatically install the required component.
               <strong> You need an active internet connection for this to work.</strong>
             </p>
-            <p>
-              If pip is not installed, you will be prompted to install it first. Click "Yes" to install pip automatically,
-              or "No" to see manual installation instructions.
-            </p>
-          </div>
-
-          <div className="info-card info-note">
-            <h4>📋 Manual pip Installation (if needed)</h4>
-            <p>If automatic pip installation fails, you can install it manually:</p>
-            <ol>
-              <li>Open <strong>OSGeo4W Shell</strong> (search for it in Start Menu)</li>
-              <li>Run: <code>python -m ensurepip --upgrade</code></li>
-              <li>Restart QGIS and try again</li>
-            </ol>
-            <p>Alternative method:</p>
-            <ol>
-              <li>Download <code>get-pip.py</code> from <a href="https://bootstrap.pypa.io/get-pip.py" target="_blank">https://bootstrap.pypa.io/get-pip.py</a></li>
-              <li>Open OSGeo4W Shell and run: <code>python get-pip.py</code></li>
-            </ol>
           </div>
         </section>
 
@@ -178,7 +151,7 @@ const BeforeYouStart = () => {
           <div className="checklist">
             <div className="checklist-item">
               <input type="checkbox" id="check1" disabled />
-              <label htmlFor="check1">QGIS 3.40 or later installed</label>
+              <label htmlFor="check1">QGIS 3.x or later installed</label>
             </div>
             <div className="checklist-item">
               <input type="checkbox" id="check2" disabled />
@@ -198,15 +171,11 @@ const BeforeYouStart = () => {
             </div>
             <div className="checklist-item">
               <input type="checkbox" id="check6" disabled />
-              <label htmlFor="check6">pip installed (usually comes with QGIS)</label>
+              <label htmlFor="check6">Internet connection (for PyQtWebEngine installation)</label>
             </div>
             <div className="checklist-item">
               <input type="checkbox" id="check7" disabled />
-              <label htmlFor="check7">Internet connection (for PyQtWebEngine installation)</label>
-            </div>
-            <div className="checklist-item">
-              <input type="checkbox" id="check8" disabled />
-              <label htmlFor="check8">CORS enabled on GeoServer (for Preview feature)</label>
+              <label htmlFor="check7">CORS enabled on GeoServer (for Preview feature)</label>
             </div>
           </div>
         </section>

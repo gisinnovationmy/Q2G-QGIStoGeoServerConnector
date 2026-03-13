@@ -130,7 +130,7 @@ const Home = () => {
         <div className="info-card info-warning">
           <h3>⚠️ Requirements</h3>
           <p>
-            You'll need QGIS 3.40 and a running GeoServer instance. Make sure you have the necessary
+            You'll need QGIS 3.x and a running GeoServer instance. Make sure you have the necessary
             credentials and network access to your GeoServer.
           </p>
         </div>

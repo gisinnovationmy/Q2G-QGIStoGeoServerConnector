@@ -3,9 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Q2G - GeoServer Connector v0.9.3 (Beta) - User Manual | Malaysia GIS Training | QGIS</title>
-    <meta name="description" content="Q2G GeoServer Connector v0.9.3 (Beta) - Complete user manual for QGIS plugin. Perfect for Malaysia GIS Training and geospatial professionals.">
-    <meta name="keywords" content="QGIS, GeoServer, Q2G, Malaysia GIS Training, geospatial, data management">
+    <title>Q2G - GeoServer Connector v0.9.4-Qt6 (Beta) - User Manual | QGIS</title>
+    <meta name="description" content="Q2G GeoServer Connector v0.9.4-Qt6 (Beta) - Complete user manual for QGIS plugin. Perfect for geospatial professionals.">
+    <meta name="keywords" content="QGIS, GeoServer, Q2G, geospatial, data management">
     <link rel="stylesheet" href="style.css">
     <style>
         /* Olive Branch Theme (#13) - Index page */
@@ -274,12 +274,12 @@
 <body id="top">
     <div class="container">
         <header>
-            <img src="images/logo.svg" alt="Q2G Logo">
+            <img src="../images/logo.svg" alt="Q2G Logo">
             <div>
                 <h1>Q2G - QGIS to GeoServer Connector</h1>
-                <p>Complete User Manual v0.9.3 (Beta)</p>
-                <p style="font-size: 0.9em; margin-top: 10px;">A powerful QGIS plugin for uploading, managing, and styling geospatial data on GeoServer. Perfect for Malaysia GIS Training and professional geospatial workflows.</p>
-                <p style="font-size: 0.85em; margin-top: 5px; color: #999;">Requires: QGIS 3.40+, GeoServer Importer Extension and PyQt5.QtWebEngineWidgets</p>
+                <p>Complete User Manual v0.9.4-Qt6 (Beta)</p>
+                <p style="font-size: 0.9em; margin-top: 10px;">A powerful QGIS plugin for uploading, managing, and styling geospatial data on GeoServer. Perfect for professional geospatial workflows.</p>
+                <p style="font-size: 0.85em; margin-top: 5px; color: #999;">Requires: GeoServer Importer Extension and PyQt6-WebEngine</p>
             </div>
         </header>
         
@@ -314,7 +314,9 @@
                 <li><a href="07-preview.html">Preview & Visualization</a></li>
                 <li><a href="08-troubleshooting.html">Troubleshooting</a></li>
                 <li><a href="09-advanced-features.html">Advanced Features</a></li>
-                <li><a href="10-faq.html">FAQ</a></li>
+                <li><a href="10-debug-mode.html">Debug Mode</a></li>
+                <li><a href="11-qtwebengine-config.html">QtWebEngine Config</a></li>
+                <li><a href="12-faq.html">FAQ</a></li>
             </ul>
         </div>
         
@@ -373,7 +375,19 @@
                 <p>Explore advanced features like batch uploads and PostGIS integration.</p>
             </a>
             
-            <a href="10-faq.html" class="nav-card">
+            <a href="10-debug-mode.html" class="nav-card">
+                <div class="icon">🔍</div>
+                <h2>Debug Mode</h2>
+                <p>Hidden developer tools for troubleshooting and diagnostics.</p>
+            </a>
+            
+            <a href="11-qtwebengine-config.html" class="nav-card">
+                <div class="icon">⚙️</div>
+                <h2>QtWebEngine Config</h2>
+                <p>Configure environment variables for stable QtWebEngine behavior.</p>
+            </a>
+            
+            <a href="12-faq.html" class="nav-card">
                 <div class="icon">❓</div>
                 <h2>FAQ</h2>
                 <p>Frequently asked questions and best practices.</p>
@@ -381,43 +395,56 @@
         </div>
         
         <footer>
-            <p><strong>Q2G - QGIS to GeoServer v0.9.3 (Beta)</strong></p>
+            <p><strong>Q2G - QGIS to GeoServer v0.9.4-Qt6 (Beta)</strong></p>
             <p>&copy; 2025 GIS Innovation Sdn Bhd. All rights reserved.</p>
-            <p style="font-size: 0.85em; color: #999;">Requires: QGIS 3.40+, GeoServer Importer Extension and PyQt5.QtWebEngineWidgets</p>
+            <p style="font-size: 0.85em; color: #999;">Requires: GeoServer Importer Extension and PyQt6-WebEngine</p>
         </footer>
     </div>
     
     <script>
         // Search functionality
         const searchData = [
-            { title: "Getting Started", url: "01-getting-started.html", keywords: ["getting started", "basics", "introduction", "features"] },
-            { title: "Installation", url: "02-installation.html", keywords: ["installation", "install", "setup", "prerequisites", "requirements"] },
-            { title: "Configuration", url: "03-configuration.html", keywords: ["configuration", "configure", "connection", "authentication", "geoserver"] },
-            { title: "Layer Upload", url: "04-layer-upload.html", keywords: ["upload", "layer", "shapefile", "geopackage", "geotiff", "batch"] },
-            { title: "Style Management", url: "05-style-management.html", keywords: ["style", "sld", "styling", "appearance", "symbology"] },
-            { title: "Workspace Management", url: "06-workspace-management.html", keywords: ["workspace", "datastore", "layer management", "delete", "create"] },
-            { title: "Preview & Visualization", url: "07-preview.html", keywords: ["preview", "visualization", "map", "view", "display"] },
-            { title: "Troubleshooting", url: "08-troubleshooting.html", keywords: ["troubleshooting", "error", "problem", "issue", "help"] },
-            { title: "Advanced Features", url: "09-advanced-features.html", keywords: ["advanced", "batch", "postgis", "performance", "optimization"] },
-            { title: "FAQ", url: "10-faq.html", keywords: ["faq", "question", "answer", "help", "frequently asked"] }
+            { title: "Getting Started", url: "01-getting-started.html" },
+            { title: "Installation", url: "02-installation.html" },
+            { title: "Configuration", url: "03-configuration.html" },
+            { title: "Layer Upload", url: "04-layer-upload.html" },
+            { title: "Style Management", url: "05-style-management.html" },
+            { title: "Workspace Management", url: "06-workspace-management.html" },
+            { title: "Preview & Visualization", url: "07-preview.html" },
+            { title: "Troubleshooting", url: "08-troubleshooting.html" },
+            { title: "Advanced Features", url: "09-advanced-features.html" },
+            { title: "Debug Mode", url: "10-debug-mode.html" },
+            { title: "QtWebEngine Config", url: "11-qtwebengine-config.html" },
+            { title: "FAQ", url: "12-faq.html" }
         ];
-        
+
         const searchInput = document.getElementById('searchInput');
         const searchResults = document.getElementById('searchResults');
-        
-        searchInput.addEventListener('input', function() {
-            const query = this.value.toLowerCase().trim();
-            
-            if (query.length === 0) {
+
+        async function performSearch(query) {
+            if (query.length < 3) {
                 searchResults.classList.remove('active');
                 return;
             }
-            
-            const results = searchData.filter(item => {
-                return item.keywords.some(keyword => keyword.includes(query)) || 
-                       item.title.toLowerCase().includes(query);
-            });
-            
+
+            searchResults.innerHTML = '<p style="color: #999;">Searching...</p>';
+            searchResults.classList.add('active');
+
+            const fetchPromises = searchData.map(page => 
+                fetch(page.url)
+                    .then(response => response.text())
+                    .then(text => {
+                        const bodyText = text.toLowerCase();
+                        if (bodyText.includes(query)) {
+                            return page;
+                        }
+                        return null;
+                    })
+                    .catch(() => null)
+            );
+
+            const results = (await Promise.all(fetchPromises)).filter(Boolean);
+
             if (results.length > 0) {
                 let html = '<strong>Search Results:</strong><ul>';
                 results.forEach(result => {
@@ -425,11 +452,18 @@
                 });
                 html += '</ul>';
                 searchResults.innerHTML = html;
-                searchResults.classList.add('active');
             } else {
                 searchResults.innerHTML = '<p style="color: #999;">No results found. Try different keywords.</p>';
-                searchResults.classList.add('active');
             }
+        }
+
+        let debounceTimer;
+        searchInput.addEventListener('input', function() {
+            const query = this.value.toLowerCase().trim();
+            clearTimeout(debounceTimer);
+            debounceTimer = setTimeout(() => {
+                performSearch(query);
+            }, 300); // Debounce for 300ms
         });
     </script>
     
