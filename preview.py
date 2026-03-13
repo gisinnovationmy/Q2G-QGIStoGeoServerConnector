@@ -1,4 +1,5 @@
 import os
+import sys
 import uuid
 import requests
 import json
@@ -11,44 +12,117 @@ import configparser
 import threading
 from http.server import HTTPServer, SimpleHTTPRequestHandler
 import socket
-from PyQt5.QtWidgets import (
+import importlib.util
+
+# Ensure we load modules from the same folder as this file
+# This MUST happen before any PyQt6-WebEngine imports
+# Handle case when running via exec() where __file__ may point to non-existent path
+_CURRENT_DIR = None
+try:
+    _candidate = os.path.dirname(os.path.abspath(__file__))
+    # Verify the path actually exists (exec() can set __file__ to a fake path)
+    if os.path.isdir(_candidate) and os.path.exists(os.path.join(_candidate, 'preview.py')):
+        _CURRENT_DIR = _candidate
+except NameError:
+    pass
+
+if _CURRENT_DIR is None:
+    # Try QGIS plugin path if available
+    try:
+        from qgis.core import QgsApplication
+        plugin_root = QgsApplication.pluginPath()
+        _candidate = os.path.join(plugin_root, "geoserverconnector")
+        if os.path.isdir(_candidate) and os.path.exists(os.path.join(_candidate, 'preview.py')):
+            _CURRENT_DIR = _candidate
+    except Exception:
+        pass
+
+if _CURRENT_DIR is None:
+    # Final fallback: current working directory or home
+    _CURRENT_DIR = os.getcwd() if os.getcwd() else os.path.expanduser("~")
+
+print(f"DEBUG: Plugin folder (_CURRENT_DIR): {_CURRENT_DIR}")
+
+
+def _load_local_module(module_name):
+    """Load a module from the same directory as this file."""
+    module_file = os.path.join(_CURRENT_DIR, f"{module_name}.py")
+    if not os.path.exists(module_file):
+        raise ImportError(f"Module not found: {module_file}")
+    spec = importlib.util.spec_from_file_location(module_name, module_file)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"Could not load spec for: {module_file}")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+from qgis.PyQt.QtWidgets import (
     QDialog, QHBoxLayout, QVBoxLayout, QListWidget, QPushButton, 
     QSplitter, QTreeWidget, QTreeWidgetItem, QLabel, QLineEdit, 
     QWidget, QCheckBox, QAbstractItemView, QMessageBox, QSlider,
     QTextEdit, QApplication, QListWidgetItem, QComboBox, QRadioButton, QButtonGroup,
     QGroupBox, QGridLayout
 )
-try:
-    from .left_panel import LeftPanel
-    from .right_panel import RightPanel
-    from .pyqtwebengine_installer import PyQtWebEngineInstallerDialog
-    from .master_layer_visibility_checkbox import MasterLayerVisibilityHandler
-except ImportError:
-    # Fallback for direct execution
-    import sys
-    import os
-    sys.path.insert(0, os.path.dirname(__file__))
-    from left_panel import LeftPanel
-    from right_panel import RightPanel
-    from pyqtwebengine_installer import PyQtWebEngineInstallerDialog
-    from master_layer_visibility_checkbox import MasterLayerVisibilityHandler
-from PyQt5.QtCore import Qt, QThread, pyqtSignal, pyqtSlot, QUrl
-try:
-    from PyQt5.QtWebEngineWidgets import QWebEngineView
-    from PyQt5.QtWebChannel import QWebChannel
-    WEBENGINE_AVAILABLE = True
-except ImportError as e:
-    print(f"DEBUG: QtWebEngineWidgets not available: {e}")
-    WEBENGINE_AVAILABLE = False
-    QWebEngineView = None
-    QWebChannel = None
-from qgis.core import QgsApplication, QgsMessageLog, Qgis, QgsSettings
 
-# Import Qt resources for local libraries
+# Load local modules directly from files to avoid path conflicts
 try:
-    from . import libs
+    _left_panel_module = _load_local_module("left_panel")
+    LeftPanel = _left_panel_module.LeftPanel
+    _right_panel_module = _load_local_module("right_panel")
+    RightPanel = _right_panel_module.RightPanel
+    _installer_module = _load_local_module("pyqtwebengine_installer")
+    PyQtWebEngineInstallerDialog = _installer_module.PyQtWebEngineInstallerDialog
+    _visibility_module = _load_local_module("master_layer_visibility_checkbox")
+    MasterLayerVisibilityHandler = _visibility_module.MasterLayerVisibilityHandler
+except ImportError as e:
+    print(f"CRITICAL: Failed to import panel modules from {_CURRENT_DIR}: {e}")
+    raise
+from qgis.PyQt.QtCore import Qt, QThread, pyqtSignal, pyqtSlot, QUrl
+from qgis.PyQt.QtGui import QShortcut, QKeySequence
+
+# Add user site-packages to path (pip installs there when QGIS site-packages is not writable)
+import site
+
+def _add_site_packages_path(path, label):
+    if path and os.path.isdir(path):
+        site.addsitedir(path)
+        print(f"DEBUG: Added {label} site-packages: {path}")
+
+_user_site = site.getusersitepackages()
+_add_site_packages_path(_user_site, "user")
+
+_py_ver = f"Python{sys.version_info.major}{sys.version_info.minor}"
+_possible_user_paths = [
+    os.path.expanduser(os.path.join("~", "AppData", "Roaming", "Python", _py_ver, "site-packages")),
+    os.path.expanduser(os.path.join("~", "AppData", "Local", "Programs", "Python", _py_ver, "Lib", "site-packages")),
+]
+for _path in _possible_user_paths:
+    _add_site_packages_path(_path, "fallback user")
+
+for _path in site.getsitepackages():
+    _add_site_packages_path(_path, "system")
+
+# ============================================================================
+# WEBENGINE - MINIMAL INITIALIZATION
+# ============================================================================
+WEBENGINE_AVAILABLE = False
+QWebEngineView = None
+QWebChannel = None
+
+try:
+    # Try PyQt6 first (QGIS 3.28+)
+    from PyQt6.QtWebEngineWidgets import QWebEngineView
+    from PyQt6.QtWebChannel import QWebChannel
+    WEBENGINE_AVAILABLE = True
 except ImportError:
-    pass
+    try:
+        # Fallback to PyQt5 (QGIS 3.16-3.26)
+        from PyQt5.QtWebEngineWidgets import QWebEngineView
+        from PyQt5.QtWebChannel import QWebChannel
+        WEBENGINE_AVAILABLE = True
+    except ImportError:
+        pass
+from qgis.core import QgsApplication, QgsMessageLog, Qgis, QgsSettings
 
 class LocalLibraryServer:
     """Simple HTTP server to serve local OpenLayers library files."""
@@ -73,6 +147,11 @@ class LocalLibraryServer:
     
     def start(self, libs_dir, port=None):
         """Start the HTTP server for local libraries."""
+        # Verify libs_dir exists before starting
+        if not os.path.isdir(libs_dir):
+            print(f"❌ Cannot start server: libs_dir does not exist: {libs_dir}")
+            return None
+            
         if self.server is not None:
             print(f"✅ Local library server already running on port {self.port}")
             return self.port  # Already running
@@ -128,6 +207,7 @@ class LayerLoadingThread(QThread):
     """Worker thread to load layers from GeoServer asynchronously."""
     layers_loaded = pyqtSignal(list)
     error_occurred = pyqtSignal(str)
+    progress_updated = pyqtSignal(int, str)  # (percentage, message)
 
     def __init__(self, url, username, password, parent=None):
         super().__init__(parent)
@@ -135,9 +215,15 @@ class LayerLoadingThread(QThread):
         self.username = username
         self.password = password
         self.log_messages = []
+        self._is_cancelled = False
 
     def log_message(self, message):
         self.log_messages.append(message)
+    
+    def cancel(self):
+        """Cancel the loading operation."""
+        self._is_cancelled = True
+        self.log_message("Layer loading cancelled by user.")
 
     def run(self):
         """Execute the layer loading task."""
@@ -158,6 +244,7 @@ class LayerLoadingThread(QThread):
         
         try:
             # First, get all workspaces
+            self.progress_updated.emit(-1, "Checking Layers...")
             workspaces_response = requests.get(f"{self.geoserver_url}/rest/workspaces.xml", auth=(self.username, self.password), headers={"Accept": "application/xml"}, timeout=10)
             if workspaces_response.status_code != 200:
                 self.log_message(f"Failed to fetch workspaces. Status: {workspaces_response.status_code}")
@@ -167,14 +254,42 @@ class LayerLoadingThread(QThread):
             workspaces = [ws.text for ws in workspaces_root.findall('.//workspace/name') if ws.text]
             self.log_message(f"Found {len(workspaces)} workspaces: {workspaces}")
             
-            # Fetch layers from each workspace
+            # First pass: Count total layers
+            total_layers = 0
+            workspace_layer_counts = {}
             for workspace in workspaces:
+                try:
+                    ws_response = requests.get(f"{self.geoserver_url}/rest/workspaces/{workspace}/layers.xml", auth=(self.username, self.password), headers={"Accept": "application/xml"}, timeout=10)
+                    if ws_response.status_code == 200:
+                        ws_root = ET.fromstring(ws_response.content)
+                        layer_count = len(ws_root.findall('.//layer/name'))
+                        workspace_layer_counts[workspace] = layer_count
+                        total_layers += layer_count
+                except Exception:
+                    workspace_layer_counts[workspace] = 0
+            
+            self.log_message(f"Total layers to load: {total_layers}")
+            self.progress_updated.emit(0, f"Loading {total_layers} layers...")
+            
+            # Second pass: Fetch layers with progress updates
+            loaded_count = 0
+            for workspace in workspaces:
+                # Check for cancellation
+                if self._is_cancelled:
+                    self.log_message("Loading cancelled - stopping workspace iteration")
+                    break
+                    
                 self.log_message(f"Fetching layers for workspace: {workspace}...")
                 try:
                     ws_response = requests.get(f"{self.geoserver_url}/rest/workspaces/{workspace}/layers.xml", auth=(self.username, self.password), headers={"Accept": "application/xml"}, timeout=10)
                     if ws_response.status_code == 200:
                         ws_root = ET.fromstring(ws_response.content)
                         for layer in ws_root.findall('.//layer/name'):
+                            # Check for cancellation in layer loop
+                            if self._is_cancelled:
+                                self.log_message("Loading cancelled - stopping layer iteration")
+                                break
+                                
                             if layer.text:
                                 actual_layer_name = f"{workspace}:{layer.text}"
                                 display_name = actual_layer_name
@@ -189,6 +304,12 @@ class LayerLoadingThread(QThread):
                                 except Exception as detail_error:
                                     self.log_message(f"Could not fetch details for {actual_layer_name}: {detail_error}")
                                 all_layers.append(layer_info)
+                                
+                                # Update progress
+                                loaded_count += 1
+                                if total_layers > 0:
+                                    percentage = int((loaded_count / total_layers) * 100)
+                                    self.progress_updated.emit(percentage, "Layers Loaded")
                     else:
                         self.log_message(f"Failed to fetch layers for workspace {workspace}. Status: {ws_response.status_code}")
                 except Exception as e:
@@ -206,7 +327,7 @@ class PreviewDialog(QDialog):
     def __init__(self, parent=None, geoserver_url=None, username=None, password=None, workspace=None, plugin_dir=None):
         super().__init__(parent)
         # Set window flags BEFORE anything else
-        self.setWindowFlags(Qt.Window | Qt.WindowMinimizeButtonHint | Qt.WindowMaximizeButtonHint | Qt.WindowCloseButtonHint)
+        self.setWindowFlags(Qt.WindowType.Window | Qt.WindowType.WindowMinimizeButtonHint | Qt.WindowType.WindowMaximizeButtonHint | Qt.WindowType.WindowCloseButtonHint)
         self.setWindowTitle("Q2G Layer Preview")
         self.resize(1200, 700)
         self.setMinimumSize(800, 600)
@@ -218,7 +339,7 @@ class PreviewDialog(QDialog):
         self.username = username
         self.password = password
         self.workspace = workspace
-        self.plugin_dir = plugin_dir or os.path.dirname(os.path.abspath(__file__))
+        self.plugin_dir = plugin_dir or _CURRENT_DIR
         self.added_layers = {}
         self.all_layers = []
         self.sort_order = 'asc'
@@ -227,7 +348,11 @@ class PreviewDialog(QDialog):
         self.is_webview_loading = True
         self._js_call_queue = []
         self._reload_after_library_change = False  # Flag for library mode toggle
-        self.pending_search_text = ""  # Store search text to apply after loading
+        self._map_initialized = False
+        self._webchannel_initialized = False
+        self._pending_html_timer = None
+        self.debug_log_group = None
+        self.right_panel = None
         self.init_theme_state()
         
     def log_message(self, message, level=Qgis.Info):
@@ -248,23 +373,21 @@ class PreviewDialog(QDialog):
             bool: True if all checks pass, False otherwise
         """
         issues = []
-        webengine_missing = False
         
         # Check 1: WebEngine availability
-        try:
-            from PyQt5.QtWebEngineWidgets import QWebEngineView
-            from PyQt5.QtWebChannel import QWebChannel
+        if not WEBENGINE_AVAILABLE:
+            issues.append("❌ WebEngine not available")
+        else:
             self.log_message("✓ WebEngine components available")
-        except ImportError as e:
-            webengine_missing = True
-            issues.append(f"❌ WebEngine not available: No module named 'PyQt5.QtWebEngineWidgets'")
         
         # Check 2: Panel modules
         try:
-            from .left_panel import LeftPanel
-            from .right_panel import RightPanel
-            self.log_message("✓ Panel modules available")
-        except ImportError as e:
+            # Panel modules are already loaded at module level via _load_local_module
+            if 'LeftPanel' in globals() and 'RightPanel' in globals():
+                self.log_message("✓ Panel modules available")
+            else:
+                issues.append("❌ Panel modules not loaded")
+        except Exception as e:
             issues.append(f"❌ Panel modules missing: {e}")
         
         # Check 3: Connection details
@@ -290,25 +413,32 @@ class PreviewDialog(QDialog):
             for issue in issues:
                 self.log_message(issue)
             
-            # If WebEngine is missing, show installer dialog
-            if webengine_missing:
-                dialog = PyQtWebEngineInstallerDialog(self.parent())
-                dialog.exec_()
-                # After dialog closes, return False (user needs to restart QGIS)
-                return False
-            else:
-                # For other issues, show warning
-                QMessageBox.warning(self.parent(), "Preview Issues", 
-                                  "Preview dialog cannot be opened due to missing requirements:\n\n" + 
-                                  "\n".join(issues))
-                return False
+            # Show warning for issues
+            QMessageBox.warning(self.parent(), "Preview Issues", 
+                              "Preview dialog cannot be opened due to missing requirements:\n\n" + 
+                              "\n".join(issues))
+            return False
         else:
             self.log_message("✅ All preview dialog checks passed")
             return True
         
+    def set_debug_mode(self, is_enabled):
+        """Shows or hides the debug-related UI elements."""
+        if hasattr(self, 'debug_mode_label'):
+            self.debug_mode_label.setVisible(is_enabled)
+        if self.right_panel and hasattr(self.right_panel, 'set_debug_mode'):
+            self.right_panel.set_debug_mode(is_enabled)
+        if self.debug_log_group:
+            self.debug_log_group.setVisible(is_enabled)
+
+    def _setup_debug_shortcut(self):
+        """Sets up the shortcut to toggle debug mode from the preview window."""
+        shortcut = QShortcut(QKeySequence("Ctrl+Alt+Shift+D"), self)
+        if hasattr(self._parent_ref, '_toggle_debug_mode'):
+            shortcut.activated.connect(self._parent_ref._toggle_debug_mode)
+
     def open_openlayers_preview(self):
         self.log_message("🎬 Opening OpenLayers preview dialog...")
-        
         # Run diagnostics first
         self.log_message("🔍 Running diagnostics...")
         if not self._run_diagnostics():
@@ -341,18 +471,32 @@ class PreviewDialog(QDialog):
             self.log_message("✅ Layout cleared")
 
             self.log_message("📐 Creating main layout and splitter...")
-            layout = QHBoxLayout()
-            splitter = QSplitter(Qt.Horizontal)
+            layout = QVBoxLayout()
+            self.debug_mode_label = QLabel("Debug Mode On")
+            self.debug_mode_label.setStyleSheet("color: blue; font-weight: bold; padding: 2px; background-color: #e6f2ff;")
+            self.debug_mode_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            self.debug_mode_label.setFixedHeight(20)
+            self.debug_mode_label.setVisible(False)
+            layout.addWidget(self.debug_mode_label)
+
+            splitter = QSplitter(Qt.Orientation.Horizontal)
             self.log_message("✅ Layout and splitter created")
             
             self.log_message("🔨 Creating left panel...")
             try:
+                # Verify LeftPanel is available
+                if 'LeftPanel' not in globals():
+                    self.log_message("❌ LeftPanel class not imported", level=Qgis.Critical)
+                    raise ImportError("LeftPanel class not available")
+                
                 left_widget = LeftPanel(self.plugin_dir, self.is_dark_theme, self)
                 self.log_message("✅ Left panel created")
             except Exception as e:
                 self.log_message(f"❌ Error creating left panel: {e}", level=Qgis.Critical)
                 import traceback
                 self.log_message(traceback.format_exc(), level=Qgis.Critical)
+                QMessageBox.critical(self, "Preview Error", 
+                    f"Failed to create left panel:\n{str(e)}\n\nPlease restart QGIS and try again.")
                 return False
             
             self.log_message("🔗 Connecting left panel signals...")
@@ -371,6 +515,10 @@ class PreviewDialog(QDialog):
             self.search_box = left_widget.search_box
             self.header_label = left_widget.header_label
             self.added_layers_tree = left_widget.added_layers_tree
+            # Set dialog reference on the tree widget for signal connections
+            if hasattr(self.added_layers_tree, 'set_dialog'):
+                self.added_layers_tree.set_dialog(self)
+            # Note: Double-click connection is done in left_panel.py connect_signals()
             self.rb_wms = left_widget.rb_wms
             self.rb_wfs = left_widget.rb_wfs
             self.rb_wmts = left_widget.rb_wmts
@@ -395,12 +543,19 @@ class PreviewDialog(QDialog):
             
             self.log_message("🔨 Creating right panel...")
             try:
+                # Verify RightPanel is available
+                if 'RightPanel' not in globals():
+                    self.log_message("❌ RightPanel class not imported", level=Qgis.Critical)
+                    raise ImportError("RightPanel class not available")
+                
                 right_widget = RightPanel(self.is_dark_theme, self, self.plugin_dir)
                 self.log_message("✅ Right panel created")
             except Exception as e:
                 self.log_message(f"❌ Error creating right panel: {e}", level=Qgis.Critical)
                 import traceback
                 self.log_message(traceback.format_exc(), level=Qgis.Critical)
+                QMessageBox.critical(self, "Preview Error", 
+                    f"Failed to create right panel:\n{str(e)}\n\nPlease restart QGIS and try again.")
                 return False
             
             self.log_message("🔗 Connecting right panel signals...")
@@ -413,102 +568,86 @@ class PreviewDialog(QDialog):
                 self.log_message(traceback.format_exc(), level=Qgis.Critical)
                 return False
             
-            # Store references to right panel widgets for backward compatibility
-            self.control_checkboxes = right_widget.control_checkboxes
-            self.log_message("✅ Right panel references stored")
-            
-            self.log_message("🧩 Adding widgets to splitter...")
-            try:
-                splitter.addWidget(left_widget)
-                splitter.addWidget(map_widget)
-                splitter.addWidget(right_widget)
-                # Set initial sizes: left=450px (fully expanded), map=auto, right=300px
-                splitter.setSizes([450, 550, 300])
-                self.log_message("✅ Widgets added to splitter (L:450px, M:550px, R:300px)")
-            except Exception as e:
-                self.log_message(f"❌ Error adding widgets to splitter: {e}", level=Qgis.Critical)
-                import traceback
-                self.log_message(traceback.format_exc(), level=Qgis.Critical)
-                return False
-            
+            # Set initial sizes: left=450px (fully expanded), map=auto, right=300px
+            splitter.addWidget(left_widget)
+            splitter.addWidget(map_widget)
+            splitter.addWidget(right_widget)
+
+            # Style splitter handles to be more visible when panels are collapsed
+            splitter.setStyleSheet("""
+                QSplitter::handle {
+                    background-color: #cccccc;
+                    width: 3px;
+                }
+                QSplitter::handle:hover {
+                    background-color: #4a90d9;
+                    width: 5px;
+                }
+            """)
+            splitter.setHandleWidth(3)
+
+            self.log_message("✅ Widgets added to splitter (L:450px, M:550px, R:300px)")
+            splitter.setSizes([450, 550, 300])
+
             # Store splitter reference and connect to size changes
             self.splitter = splitter
             self.right_panel = right_widget
             splitter.splitterMoved.connect(self._on_splitter_moved)
             
             self.log_message("📦 Adding splitter to layout...")
-            try:
-                layout.addWidget(splitter)
-                self.setLayout(layout)
-                self.log_message("✅ Layout set")
-            except Exception as e:
-                self.log_message(f"❌ Error setting layout: {e}", level=Qgis.Critical)
-                import traceback
-                self.log_message(traceback.format_exc(), level=Qgis.Critical)
-                return False
-            
-            
+            layout.addWidget(splitter)
+            self.setLayout(layout)
+            self._setup_debug_shortcut()
+            self.log_message("✅ Layout set")
+
             # Set up web channel BEFORE loading HTML to avoid race conditions in JS initialization
             self.log_message("📡 Setting up web channel...")
-            try:
-                self.setup_web_channel()
-                self.log_message("✅ Web channel setup complete")
-            except Exception as e:
-                self.log_message(f"❌ Error setting up web channel: {e}", level=Qgis.Critical)
-                import traceback
-                self.log_message(traceback.format_exc(), level=Qgis.Critical)
-                return False
-            
-            self.log_message("🗺️ Initializing OpenLayers map...")
-            try:
+            self.setup_web_channel()
+            self.log_message("✅ Web channel setup complete")
+
+            if self.web_view is not None:
+                self.log_message("🗺️ Initializing OpenLayers map...")
                 self.initialize_openlayers_map(self.web_view)
                 self.log_message("✅ OpenLayers map initialized")
-            except Exception as e:
-                self.log_message(f"❌ Error initializing OpenLayers map: {e}", level=Qgis.Critical)
-                import traceback
-                self.log_message(traceback.format_exc(), level=Qgis.Critical)
-                return False
+            else:
+                self.log_message("ℹ️ WebEngine disabled, skipping map initialization")
             
             # Load saved base map mode from ini file
             self.log_message("📂 Loading saved base map mode...")
-            try:
-                self._load_saved_base_map_mode()
-                self.log_message("✅ Base map mode loaded")
-            except Exception as e:
-                self.log_message(f"❌ Error loading base map mode: {e}", level=Qgis.Critical)
-                import traceback
-                self.log_message(traceback.format_exc(), level=Qgis.Critical)
-                return False
-            
+            self._load_saved_base_map_mode()
+            self.log_message("✅ Base map mode loaded")
+
             self.log_message("👁️ Showing dialog...")
-            try:
-                # Center dialog on screen
-                from qgis.PyQt.QtWidgets import QApplication
-                screen = QApplication.primaryScreen()
-                screen_geometry = screen.availableGeometry()
-                x = (screen_geometry.width() - self.width()) // 2
-                y = (screen_geometry.height() - self.height()) // 2
-                self.move(x, y)
-                self.log_message("✅ Dialog centered on screen")
-                
-                # Show the dialog (non-blocking)
-                self.show()
-                self.log_message("✅ Dialog show() called successfully")
-                
-                # Ensure dialog is visible and on top
-                from PyQt5.QtCore import QTimer
-                
-                # Initialize the select all checkbox state
-                QTimer.singleShot(200, self.update_select_all_checkbox_state)
-                QTimer.singleShot(100, lambda: self.raise_() if self.isVisible() else None)
-                QTimer.singleShot(100, lambda: self.activateWindow() if self.isVisible() else None)
-                
-            except Exception as e:
-                import traceback
-                self.log_message(f"❌ Error calling show(): {e}", level=Qgis.Critical)
-                self.log_message(traceback.format_exc(), level=Qgis.Critical)
-                return False
+            # Center dialog on screen
+            from qgis.PyQt.QtWidgets import QApplication
+            screen = QApplication.primaryScreen()
+            screen_geometry = screen.availableGeometry()
+            x = (screen_geometry.width() - self.width()) // 2
+            y = (screen_geometry.height() - self.height()) // 2
+            self.move(x, y)
+            self.log_message("✅ Dialog centered on screen")
             
+            # Show the dialog (non-blocking)
+            self.show()
+            self.log_message("✅ Dialog show() called successfully")
+            
+            # DEBUG: Log dialog state after show()
+            self.log_message(f"DEBUG after show(): self.isVisible()={self.isVisible()}")
+            self.log_message(f"DEBUG after show(): self.size()={self.size().width()}x{self.size().height()}")
+            if self.web_view is not None:
+                self.log_message(f"DEBUG after show(): web_view.isVisible()={self.web_view.isVisible()}")
+                self.log_message(f"DEBUG after show(): web_view.size()={self.web_view.size().width()}x{self.web_view.size().height()}")
+            else:
+                self.log_message("DEBUG after show(): web_view is None (placeholder mode)")
+            
+            # Ensure dialog is visible and on top
+            from qgis.PyQt.QtCore import QTimer
+            
+            # Initialize the select all checkbox state
+            QTimer.singleShot(200, self.update_select_all_checkbox_state)
+            QTimer.singleShot(100, lambda: self.raise_() if self.isVisible() else None)
+            QTimer.singleShot(100, lambda: self.activateWindow() if self.isVisible() else None)
+                
             self.log_message("✅✅✅ Preview dialog opened successfully!")
             return self
         except Exception as e:
@@ -552,6 +691,8 @@ class PreviewDialog(QDialog):
         is_dark = self.rb_base_dark.isChecked()
         if is_dark != self.is_dark_theme:
             self.is_dark_theme = is_dark
+            if self.web_view is None:
+                return
             js_call = f"toggleDarkMode({str(self.is_dark_theme).lower()});"
             if self.is_webview_loading:
                 self.log_message(f"Webview loading, queuing JS call: {js_call}")
@@ -611,7 +752,9 @@ class PreviewDialog(QDialog):
 
             self.log_message(f"Executing JS calls: {js_calls}")
 
-            if self.is_webview_loading:
+            if self.web_view is None:
+                self.log_message("WebEngine disabled, skipping JS calls")
+            elif self.is_webview_loading:
                 for c in js_calls:
                     self._js_call_queue.append(c)
                 self.log_message("Webview loading, queued JS calls")
@@ -632,7 +775,7 @@ class PreviewDialog(QDialog):
         control_map = {
             "Zoom Control": "Zoom",
             "Scale Control": "ScaleLine",
-            "Layer Control": "LayerSwitcher", # Assuming a custom or extension control
+            "Layer Control": "LayerSwitcher",
             "Attribution Control": "Attribution",
             "FullScreen Control": "FullScreen",
             "Rotate Control": "Rotate",
@@ -640,8 +783,6 @@ class PreviewDialog(QDialog):
             "ZoomToExtent Control": "ZoomToExtent",
             "Mouse Position Control": "MousePosition",
             "OverviewMap Control": "OverviewMap",
-            "Print Control": "Print",
-            "Export Control": "Export",
             "Mode Indicator": "ModeIndicator"
         }
         control_name = control_map.get(name)
@@ -650,37 +791,97 @@ class PreviewDialog(QDialog):
             
         # Special handling for Mode Indicator
         if control_name == "ModeIndicator":
-            js_call = f"toggleModeIndicator({str(state == Qt.Checked).lower()});"
+            js_call = f"toggleModeIndicator({str(state == Qt.CheckState.Checked.value).lower()});"
         else:
-            if state == Qt.Checked:
+            if state == Qt.CheckState.Checked.value:
                 js_call = f"addControl('{control_name}');"
             else:
                 js_call = f"removeControl('{control_name}');"
         
 
+        if self.web_view is None:
+            return
         if self.is_webview_loading:
             self.log_message(f"Webview loading, queuing JS call: {js_call}")
             self._js_call_queue.append(js_call)
         else:
             self.web_view.page().runJavaScript(js_call)
 
+    def _log_status(self, message):
+        """Log a status message to the right panel status log."""
+        import datetime
+        timestamp = datetime.datetime.now().strftime("%H:%M:%S.%f")[:-3]
+        formatted = f"[{timestamp}] {message}"
+        try:
+            if hasattr(self, 'right_panel') and hasattr(self.right_panel, 'status_log'):
+                self.right_panel.status_log.append(formatted)
+                # Force UI update
+                from qgis.PyQt.QtWidgets import QApplication
+                QApplication.processEvents()
+        except:
+            pass
+        # Also log to main log
+        self.log_message(f"STATUS: {message}")
+
     def _create_map_panel(self):
-        map_widget = QWidget()
-        map_layout = QVBoxLayout()
+        """Create the map panel with QWebEngineView."""
+        self._log_status("Stage 1: Creating map panel container...")
+        container = QWidget()
+        layout = QVBoxLayout(container)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+        
+        # Check if WebEngine is available
+        self._log_status(f"Stage 2: Checking WebEngine availability...")
+        self._log_status(f"  WEBENGINE_AVAILABLE = {WEBENGINE_AVAILABLE}")
+        self._log_status(f"  QWebEngineView = {QWebEngineView}")
         
         if not WEBENGINE_AVAILABLE or QWebEngineView is None:
-            error_label = QLabel("❌ QtWebEngineWidgets is not available.\n\nTo fix:\n1. Open QGIS Python Console\n2. Run: import subprocess, sys; subprocess.check_call([sys.executable, '-m', 'pip', 'install', 'PyQtWebEngine'])\n3. Restart QGIS")
-            error_label.setWordWrap(True)
-            map_layout.addWidget(error_label)
-            map_widget.setLayout(map_layout)
-            self.log_message("❌ QWebEngineView not available", level=Qgis.Critical)
-            raise RuntimeError("QtWebEngineWidgets not available")
+            self._log_status("FAILED: WebEngine not available!")
+            self.web_view = None
+            placeholder = QLabel("Map Preview Unavailable\n\nPyQt6-WebEngine required.")
+            placeholder.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            placeholder.setStyleSheet("background:#f0f0f0;color:#666;padding:20px;")
+            layout.addWidget(placeholder)
+            return container
         
-        self.web_view = QWebEngineView()
+        self._log_status("Stage 3: Creating QWebEngineView instance...")
+        try:
+            self.web_view = QWebEngineView()
+            self._log_status("  QWebEngineView created successfully")
+            
+            # Enable local content to access remote URLs (CDN, etc.)
+            from qgis.PyQt.QtWebEngineCore import QWebEngineSettings
+            settings = self.web_view.page().settings()
+            settings.setAttribute(QWebEngineSettings.WebAttribute.LocalContentCanAccessRemoteUrls, True)
+            settings.setAttribute(QWebEngineSettings.WebAttribute.LocalContentCanAccessFileUrls, True)
+            self._log_status("  WebEngine settings: LocalContentCanAccessRemoteUrls=True")
+        except Exception as e:
+            self._log_status(f"FAILED: Could not create QWebEngineView: {e}")
+            self.web_view = None
+            return container
+        
+        self._log_status("Stage 4: Connecting loadFinished signal...")
+        try:
+            self.web_view.loadFinished.disconnect(self.on_webview_load_finished)
+        except TypeError:  # Not connected
+            pass
         self.web_view.loadFinished.connect(self.on_webview_load_finished)
-        map_layout.addWidget(self.web_view)
-        map_widget.setLayout(map_layout)
-        return map_widget
+        self._log_status("  Signal connected")
+        
+        layout.addWidget(self.web_view)
+        self._log_status("Stage 5: Map panel container ready")
+        return container
+
+    def _execute_js(self, code, callback=None):
+        """Execute JavaScript safely."""
+        if self.web_view is None:
+            return False
+        if callback:
+            self.web_view.page().runJavaScript(code, callback)
+        else:
+            self.web_view.page().runJavaScript(code)
+        return True
 
     def start_layer_loading(self):
         """Start loading layers from GeoServer in a background thread."""
@@ -692,9 +893,6 @@ class PreviewDialog(QDialog):
         self.load_layers_button.setText("⏳ Loading...")
         self.load_layers_button.setEnabled(False)
         
-        # Disconnect textChanged signal to prevent filter_layers from interfering
-        self.search_box.textChanged.disconnect()
-        
         # Start the loading thread
         self.loading_thread = LayerLoadingThread(self.geoserver_url, self.username, self.password, parent=self)
         self.loading_thread.layers_loaded.connect(self.on_layers_loaded)
@@ -704,6 +902,7 @@ class PreviewDialog(QDialog):
 
     @pyqtSlot(list)
     def on_layers_loaded(self, layers):
+        self.layers_list.clear()
         self.log_message(f"on_layers_loaded called with {len(layers)} layers")
         
         # Debug: Print layer types
@@ -713,54 +912,24 @@ class PreviewDialog(QDialog):
         self.log_message(f"Layer types received: {layer_types}")
         
         if not layers:
-            self.layers_list.clear()
             self.layers_list.addItem("No layers found.")
             return
 
         self.all_layers = sorted(layers, key=lambda x: x['display_name'])
-        self.log_message(f"Successfully loaded {len(self.all_layers)} layers.")
-        
-        # Get search text from search box
-        search_text = self.search_box.text().strip()
-        self.log_message(f"🔍 on_layers_loaded: search_box.text()='{search_text}' (len={len(search_text)})")
-        
-        # Clear the list
-        self.layers_list.clear()
-        
-        # If search text exists, filter layers; otherwise show all
-        if search_text:
-            self.log_message(f"🔍 Search text found, filtering...")
-            try:
-                from wildcard_filter import WildcardFilter
-            except ImportError:
-                try:
-                    from .wildcard_filter import WildcardFilter
-                except ImportError:
-                    import wildcard_filter as wf
-                    WildcardFilter = wf.WildcardFilter
-            
-            filtered_layers = [layer for layer in self.all_layers 
-                             if WildcardFilter.matches_pattern(layer['display_name'], search_text)]
-            self.log_message(f"🔍 Filtered result: {len(filtered_layers)} layers match '{search_text}'")
-            for layer in filtered_layers[:3]:
-                self.log_message(f"  - {layer['display_name']}")
-            layers_to_show = filtered_layers
-        else:
-            self.log_message(f"🔍 No search text, showing all {len(self.all_layers)} layers")
-            layers_to_show = self.all_layers
-        
-        # Populate the list
-        self.log_message(f"🔍 Populating list with {len(layers_to_show)} layers")
-        for layer_data in layers_to_show:
+        for layer_data in self.all_layers:
             item = QListWidgetItem(layer_data['display_name'])
-            item.setData(Qt.UserRole, layer_data)
+            # Store the whole dictionary for access to layer_type
+            item.setData(Qt.ItemDataRole.UserRole, layer_data)
             self.layers_list.addItem(item)
+            self.log_message(f"Added to UI: {layer_data['display_name']} ({layer_data.get('layer_type', 'Unknown')})")
+        self.log_message(f"Successfully loaded {len(self.all_layers)} layers to UI.")
         
-        self.log_message(f"🔍 List now contains {self.layers_list.count()} items")
-        
-        # Reconnect textChanged signal now that filtering is complete
-        self.search_box.textChanged.connect(self.filter_layers)
-        self.log_message(f"🔍 textChanged signal reconnected")
+        # Apply current search filter if any text is present
+        if hasattr(self, 'search_box'):
+            current_filter = self.search_box.text()
+            if current_filter:
+                self.filter_layers(current_filter)
+                self.log_message(f"Applied existing search filter: '{current_filter}'")
 
     @pyqtSlot(str)
     def on_loading_error(self, error_message):
@@ -768,6 +937,7 @@ class PreviewDialog(QDialog):
         self.layers_list.addItem(f"Error loading layers: {error_message}")
         QMessageBox.warning(self, "Layer Loading Error", error_message)
 
+    
     @pyqtSlot()
     def on_loading_finished(self):
         self.log_message("Layer loading thread has finished.")
@@ -782,40 +952,46 @@ class PreviewDialog(QDialog):
             self.loading_thread.deleteLater()
             self.loading_thread = None
 
-    def initialize_openlayers_map(self, web_view):
-        """Initialize the OpenLayers map in the web view."""
-        # Correctly escape braces for f-string formatting.
-        # Python's f-string uses {{ and }} to represent literal braces.
-        # JavaScript template literals `${...}` need to be escaped if they are inside an f-string.
-        # Since we are not using python variables inside the JS template literals, we can just use them as is.
+    def _generate_openlayers_html(self):
+        """
+        COMPLETELY NEW OPENLAYERS MAP INITIALIZATION
+        Fresh implementation from scratch.
+        """
+        self._log_status("Stage 6: initialize_openlayers_map called...")
+        if self.web_view is None:
+            self._log_status("FAILED: self.web_view is None!")
+            return
+        self._log_status("  self.web_view is valid")
         
-        # Determine library mode (Local or CDN)
-        library_mode = 'CDN'  # Default
-        self.use_local_libs = False  # Track if we're using local libraries
+        # Determine library mode
+        lib_mode = 'CDN'
+        self.use_local_libs = False
         try:
             if hasattr(self, 'right_panel') and self.right_panel:
-                library_mode = self.right_panel.get_library_mode()
-                self.log_message(f"📚 Library mode detected: {library_mode}")
-            else:
-                self.log_message(f"⚠️ Right panel not available, using default CDN")
-        except Exception as e:
-            self.log_message(f"⚠️ Could not determine library mode, using CDN: {e}")
+                lib_mode = self.right_panel.get_library_mode()
+        except Exception:
+            pass
         
-        # Generate appropriate library links based on mode
-        if library_mode == 'Local':
-            # Use local OpenLayers files with absolute file:// paths
-            import os
-            libs_dir = os.path.join(self.plugin_dir, 'libs', 'openlayers')
-            ol_css_file = os.path.join(libs_dir, 'ol.css')
-            ol_js_file = os.path.join(libs_dir, 'ol.js')
+        self._log_status(f"Stage 7: Library mode = {lib_mode}")
+        
+        # Build OpenLayers library URLs
+        if lib_mode == 'Local':
+            libs_dir = os.path.join(self.plugin_dir, 'libs')
+            ol_css_file = os.path.join(libs_dir, 'openlayers', 'ol.css')
+            ol_js_file = os.path.join(libs_dir, 'openlayers', 'ol.js')
             
-            # Validate files exist
-            if not os.path.exists(ol_css_file):
+            self.log_message(f"📂 Checking local libs at: {libs_dir}")
+            
+            # Validate libs directory and files exist
+            if not os.path.isdir(libs_dir):
+                self.log_message(f"⚠️ Local libs folder not found: {libs_dir}, falling back to CDN")
+                lib_mode = 'CDN'
+            elif not os.path.exists(ol_css_file):
                 self.log_message(f"⚠️ Local CSS file not found: {ol_css_file}, falling back to CDN")
-                library_mode = 'CDN'
+                lib_mode = 'CDN'
             elif not os.path.exists(ol_js_file):
                 self.log_message(f"⚠️ Local JS file not found: {ol_js_file}, falling back to CDN")
-                library_mode = 'CDN'
+                lib_mode = 'CDN'
             else:
                 # Start HTTP server to serve local libraries
                 self.log_message(f"📂 Local libraries folder: {libs_dir}")
@@ -846,9 +1022,10 @@ class PreviewDialog(QDialog):
                         test_url = f"http://127.0.0.1:{port}/openlayers/ol.js"
                         response = requests.head(test_url, timeout=2)
                         if response.status_code == 200:
-                            # Server is responding, use it
+                            # Server is responding, use it - include script tag directly
                             ol_css_link = f'<link rel="stylesheet" href="http://127.0.0.1:{port}/openlayers/ol.css" type="text/css">'
-                            ol_js_link = f'<script src="http://127.0.0.1:{port}/openlayers/ol.js"></script>'
+                            ol_js_url = f'http://127.0.0.1:{port}/openlayers/ol.js'
+                            ol_js_link = f'<script src="{ol_js_url}"></script>'
                             self.use_local_libs = True
                             self.log_message(f"✅ HTTP server started successfully on port {port}")
                             self.log_message(f"✅ Server is responding to requests")
@@ -856,35 +1033,36 @@ class PreviewDialog(QDialog):
                             self.log_message(f"📁 Server URL: http://127.0.0.1:{port}/openlayers/")
                             self.log_message(f"📁 Serving from: {libs_dir}")
                             self.log_message(f"📁 CSS URL: http://127.0.0.1:{port}/openlayers/ol.css")
-                            self.log_message(f"📁 JS URL: http://127.0.0.1:{port}/openlayers/ol.js")
+                            self.log_message(f"📁 JS URL (dynamic): {ol_js_url}")
                         else:
                             # Server not responding properly
                             self.log_message(f"❌ Local server not responding (HTTP {response.status_code}), falling back to CDN")
-                            library_mode = 'CDN'
+                            lib_mode = 'CDN'
                     except Exception as e:
                         # Server test failed
                         self.log_message(f"❌ Local server test failed: {e}, falling back to CDN")
-                        library_mode = 'CDN'
+                        lib_mode = 'CDN'
                 else:
                     # Fallback to CDN if server fails to start
                     self.log_message(f"❌ Failed to start local library server, falling back to CDN")
-                    library_mode = 'CDN'
+                    lib_mode = 'CDN'
         
-        if library_mode == 'CDN':
-            # Use CDN OpenLayers files
+        if lib_mode == 'CDN':
+            # Use CDN OpenLayers files - include script tag directly
             ol_css_link = '<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/openlayers/openlayers.github.io@master/en/v6.5.0/css/ol.css" type="text/css">'
-            ol_js_link = '<script src="https://cdn.jsdelivr.net/gh/openlayers/openlayers.github.io@master/en/v6.5.0/build/ol.js"></script>'
+            ol_js_url = 'https://cdn.jsdelivr.net/gh/openlayers/openlayers.github.io@master/en/v6.5.0/build/ol.js'
+            ol_js_link = f'<script src="{ol_js_url}"></script>'
             self.log_message("☁️ Using CDN OpenLayers library (from internet)")
             self.log_message("☁️ CSS URL: https://cdn.jsdelivr.net/gh/openlayers/openlayers.github.io@master/en/v6.5.0/css/ol.css")
-            self.log_message("☁️ JS URL: https://cdn.jsdelivr.net/gh/openlayers/openlayers.github.io@master/en/v6.5.0/build/ol.js")
+            self.log_message("☁️ JS URL: " + ol_js_url)
         
         # Add library mode indicator to HTML content with a unique ID
-        # Position it higher to avoid overlapping with contribution controls
+        # Position at same Y level as OverviewMap control (bottom of map)
         library_indicator = f'''
-        <div id="library-mode-indicator" style="position: absolute; bottom: 70px; right: 10px; background: rgba(0,0,0,0.6); 
+        <div id="library-mode-indicator" style="position: absolute; bottom: 25px; right: 10px; background: rgba(0,0,0,0.6); 
                                                color: white; padding: 5px 10px; border-radius: 4px; font-size: 12px; 
                                                font-family: Arial, sans-serif; z-index: 1000; pointer-events: none; display: block;">
-            {'🌐 CDN Mode' if library_mode == 'CDN' else '📂 Local Mode'}
+            {'🌐 CDN Mode' if lib_mode == 'CDN' else '📂 Local Mode'}
         </div>
         '''
         
@@ -903,12 +1081,17 @@ class PreviewDialog(QDialog):
         <html>
         <head>
             <title>GeoServer Layer Preview</title>
-            <!-- OpenLayers (Local or CDN) -->
+            <!-- Allow loading external scripts from CDN -->
+            <meta http-equiv="Content-Security-Policy" content="default-src * 'unsafe-inline' 'unsafe-eval'; script-src * 'unsafe-inline' 'unsafe-eval'; connect-src *; img-src * data: blob:;">
+            <!-- OpenLayers CSS (Local or CDN) -->
             {ol_css_link}
             {ol_js_link}
             
             <!-- Qt Web Channel -->
             <script src="qrc:///qtwebchannel/qwebchannel.js"></script>
+            
+            <!-- OpenLayers JS URL for dynamic loading -->
+            <script>window.OL_JS_URL = '{ol_js_url}';</script>
             <style>
                 html, body, #map {{ margin: 0; padding: 0; width: 100%; height: 100%; }}
                 /* Rulers & Guides */
@@ -961,11 +1144,42 @@ class PreviewDialog(QDialog):
                     }}
                 }} catch (e) {{}}
             }});
-                var base_layer_light = new ol.layer.Tile({{ 
+            
+            // Global variables for base layers (need to be accessible by toggleBaseLayer, etc.)
+            var base_layer_light = null;
+            var base_layer_dark = null;
+            var ol_script_loaded = false;
+            
+            // OpenLayers is loaded via script tag in head - just need to wait for it
+            function loadOpenLayersScript() {{
+                // Script tag is in head, just wait for it to load
+                console.log('Waiting for OpenLayers to load from script tag...');
+                ol_script_loaded = true;
+                // Retry initializeMap after a short delay
+                setTimeout(initializeMap, 100);
+            }}
+            
+            // Initialize map after OpenLayers is loaded
+            function initializeMap() {{
+                // Check if OpenLayers is loaded
+                if (typeof ol === 'undefined') {{
+                    if (!ol_script_loaded) {{
+                        console.log('OpenLayers not loaded yet, loading script...');
+                        loadOpenLayersScript();
+                        return;
+                    }}
+                    console.error('OpenLayers script loaded but ol is undefined, retrying in 100ms...');
+                    setTimeout(initializeMap, 100);
+                    return;
+                }}
+                
+                console.log('OpenLayers loaded, initializing map...');
+                
+                base_layer_light = new ol.layer.Tile({{ 
                     source: new ol.source.OSM(),
                     attribution: '© OpenStreetMap contributors'
                 }});
-                var base_layer_dark = new ol.layer.Tile({{ 
+                base_layer_dark = new ol.layer.Tile({{ 
                     source: new ol.source.XYZ({{ 
                         url: 'https://{{a-c}}.basemaps.cartocdn.com/dark_all/{{z}}/{{x}}/{{y}}.png',
                         attributions: '© CartoDB contributors, © OpenStreetMap contributors'
@@ -988,10 +1202,27 @@ class PreviewDialog(QDialog):
                 window.ol_layers = {{}};
                 window.ol_controls = {{}};
                 window.is_dark_theme = {str(self.is_dark_theme).lower()};
+                
+                // Store base layers globally for access by other functions
+                window.base_layer_light = base_layer_light;
+                window.base_layer_dark = base_layer_dark;
 
                 new QWebChannel(qt.webChannelTransport, function (channel) {{
                     window.backend = channel.objects.backend;
+                    if (window.backend && window.backend.log_message) {{
+                        window.backend.log_message('✅ Map initialized successfully');
+                    }}
                 }});
+                
+                console.log('OpenLayers map initialized successfully');
+            }}
+            
+            // Start initialization when DOM is ready
+            if (document.readyState === 'loading') {{
+                document.addEventListener('DOMContentLoaded', initializeMap);
+            }} else {{
+                initializeMap();
+            }}
 
 
                 function addWmsLayer(url, layerName, layerId, title) {{
@@ -1007,7 +1238,7 @@ class PreviewDialog(QDialog):
                         }});
                         wmsLayer.set('id', layerId);
                         if (title) wmsLayer.set('title', title);
-                        map.addLayer(wmsLayer);
+                        window.ol_map.addLayer(wmsLayer);
                         window.ol_layers[layerId] = wmsLayer;
                         if (window.backend && window.backend.log_message) {{
                             window.backend.log_message('✅ WMS layer added: ' + layerId);
@@ -1033,7 +1264,7 @@ class PreviewDialog(QDialog):
                         }});
                         wfsLayer.set('id', layerId);
                         if (title) wfsLayer.set('title', title);
-                        map.addLayer(wfsLayer);
+                        window.ol_map.addLayer(wfsLayer);
                         window.ol_layers[layerId] = wfsLayer;
                         if (window.backend && window.backend.log_message) {{
                             window.backend.log_message('✅ WFS layer added: ' + layerId);
@@ -1048,36 +1279,88 @@ class PreviewDialog(QDialog):
 
                 function addWmtsLayer(url, layerName, layerId, title) {{
                     try {{
-                        fetch(url + '?request=GetCapabilities').then(function(response) {{
-                            return response.text();
-                        }}).then(function(text) {{
-                            try {{
-                                var parser = new ol.format.WMTSCapabilities();
-                                var result = parser.read(text);
-                                var options = ol.source.WMTS.optionsFromCapabilities(result, {{
-                                    layer: layerName,
-                                    matrixSet: 'EPSG:900913'
-                                }});
-                                var wmtsLayer = new ol.layer.Tile({{ source: new ol.source.WMTS(options) }});
-                                wmtsLayer.set('id', layerId);
-                                if (title) wmtsLayer.set('title', title);
-                                map.addLayer(wmtsLayer);
-                                window.ol_layers[layerId] = wmtsLayer;
-                                if (window.backend && window.backend.log_message) {{
-                                    window.backend.log_message('✅ WMTS layer added: ' + layerId);
+                        console.log('[JS] addWmtsLayer called with layerName: ' + layerName + ', url: ' + url);
+                        if (window.backend && window.backend.log_message) {{
+                            window.backend.log_message('🔄 Adding WMTS layer: ' + layerName + ' from ' + url);
+                        }}
+                        
+                        // Use GetCapabilities to get the correct matrixSet and tileGrid
+                        var capabilitiesUrl = url + '?SERVICE=WMTS&REQUEST=GetCapabilities';
+                        console.log('[JS] Fetching WMTS capabilities from: ' + capabilitiesUrl);
+                        
+                        fetch(capabilitiesUrl)
+                            .then(function(response) {{
+                                if (!response.ok) {{
+                                    throw new Error('Failed to fetch capabilities: ' + response.status);
                                 }}
-                                refreshLayerSwitcher();
-                            }} catch (e) {{
-                                if (window.backend && window.backend.log_message) {{
-                                    window.backend.log_message('❌ Error parsing WMTS capabilities for ' + layerId + ': ' + e.message);
+                                return response.text();
+                            }})
+                            .then(function(text) {{
+                                try {{
+                                    var parser = new ol.format.WMTSCapabilities();
+                                    var result = parser.read(text);
+                                    console.log('[JS] WMTS capabilities parsed successfully');
+                                    
+                                    // Try different matrixSet options
+                                    var matrixSets = ['EPSG:900913', 'EPSG:3857', 'GoogleMapsCompatible', 'WebMercatorQuad'];
+                                    var options = null;
+                                    
+                                    for (var i = 0; i < matrixSets.length; i++) {{
+                                        try {{
+                                            options = ol.source.WMTS.optionsFromCapabilities(result, {{
+                                                layer: layerName,
+                                                matrixSet: matrixSets[i]
+                                            }});
+                                            if (options) {{
+                                                console.log('[JS] Found working matrixSet: ' + matrixSets[i]);
+                                                break;
+                                            }}
+                                        }} catch (e) {{
+                                            console.log('[JS] MatrixSet ' + matrixSets[i] + ' not available');
+                                        }}
+                                    }}
+                                    
+                                    if (!options) {{
+                                        // Fallback: try without specifying matrixSet
+                                        options = ol.source.WMTS.optionsFromCapabilities(result, {{
+                                            layer: layerName
+                                        }});
+                                    }}
+                                    
+                                    if (options) {{
+                                        var wmtsLayer = new ol.layer.Tile({{
+                                            source: new ol.source.WMTS(options)
+                                        }});
+                                        wmtsLayer.set('id', layerId);
+                                        if (title) wmtsLayer.set('title', title);
+                                        window.ol_map.addLayer(wmtsLayer);
+                                        window.ol_layers[layerId] = wmtsLayer;
+                                        
+                                        window.ol_map.render();
+                                        window.ol_map.updateSize();
+                                        
+                                        if (window.backend && window.backend.log_message) {{
+                                            window.backend.log_message('✅ WMTS layer added: ' + layerName);
+                                        }}
+                                        refreshLayerSwitcher();
+                                    }} else {{
+                                        throw new Error('Could not find layer in capabilities');
+                                    }}
+                                }} catch (parseError) {{
+                                    console.log('[JS] Error parsing capabilities: ' + parseError.message);
+                                    if (window.backend && window.backend.log_message) {{
+                                        window.backend.log_message('❌ Error parsing WMTS capabilities: ' + parseError.message);
+                                    }}
                                 }}
-                            }}
-                        }}).catch(function(error) {{
-                            if (window.backend && window.backend.log_message) {{
-                                window.backend.log_message('❌ Error fetching WMTS capabilities for ' + layerId + ': ' + error.message);
-                            }}
-                        }});
+                            }})
+                            .catch(function(fetchError) {{
+                                console.log('[JS] Error fetching capabilities: ' + fetchError.message);
+                                if (window.backend && window.backend.log_message) {{
+                                    window.backend.log_message('❌ Error fetching WMTS capabilities: ' + fetchError.message);
+                                }}
+                            }});
                     }} catch (e) {{
+                        console.log('[JS] Error adding WMTS layer: ' + e.message);
                         if (window.backend && window.backend.log_message) {{
                             window.backend.log_message('❌ Error adding WMTS layer ' + layerId + ': ' + e.message);
                         }}
@@ -1098,7 +1381,7 @@ class PreviewDialog(QDialog):
                 }}
 
                 function clearMap() {{
-                    Object.values(window.ol_layers).forEach(layer => map.removeLayer(layer));
+                    Object.values(window.ol_layers).forEach(layer => window.ol_map.removeLayer(layer));
                     window.ol_layers = {{}};
                     refreshLayerSwitcher();
                 }}
@@ -1107,25 +1390,27 @@ class PreviewDialog(QDialog):
                     if (extent && extent.length === 4) {{
                         try {{
                             var sourceCrs = crs || 'EPSG:4326';
-                            var viewProj = map.getView().getProjection();
+                            var viewProj = window.ol_map.getView().getProjection();
                             var viewCode = viewProj ? viewProj.getCode() : 'EPSG:3857';
                             var fitExtent = extent;
                             if (sourceCrs && viewCode && sourceCrs !== viewCode) {{
                                 fitExtent = ol.proj.transformExtent(extent, sourceCrs, viewCode);
                             }}
-                            map.getView().fit(fitExtent, {{ duration: 1000, padding: [50, 50, 50, 50] }});
+                            window.ol_map.getView().fit(fitExtent, {{ duration: 1000, padding: [50, 50, 50, 50] }});
                         }} catch (e) {{
-                            map.getView().fit(extent, {{ duration: 1000, padding: [50, 50, 50, 50] }});
+                            window.ol_map.getView().fit(extent, {{ duration: 1000, padding: [50, 50, 50, 50] }});
                         }}
                     }}
                 }}
 
                 function toggleBaseLayer(visible) {{
+                    if (!base_layer_light || !base_layer_dark) return;
                     base_layer_light.setVisible(visible && !window.is_dark_theme);
                     base_layer_dark.setVisible(visible && window.is_dark_theme);
                 }}
 
                 function toggleDarkMode(is_dark) {{
+                    if (!base_layer_light || !base_layer_dark) return;
                     window.is_dark_theme = is_dark;
                     if (base_layer_light.getVisible() || base_layer_dark.getVisible()) {{
                         base_layer_light.setVisible(!is_dark);
@@ -1134,29 +1419,33 @@ class PreviewDialog(QDialog):
                 }}
 
                 function refreshLayerOrder(layerIds) {{
+                    // layerIds comes in reversed order (for z-index: bottom layer first)
+                    // Set z-index accordingly
                     layerIds.forEach((id, index) => {{
                         const layer = window.ol_layers[id];
                         if (layer) {{
                             layer.setZIndex(index + 2);
                         }}
                     }});
-                    window._layerOrder = layerIds.slice();
+                    // Store the DISPLAY order (reverse of z-index order) for Layer Switcher
+                    // This matches the left panel's top-to-bottom order
+                    window._layerOrder = layerIds.slice().reverse();
                     refreshLayerSwitcher();
                 }}
 
                 function getMapView() {{
-                    var view = map.getView();
+                    var view = window.ol_map.getView();
                     return {{
                         center: view.getCenter(),
                         zoom: view.getZoom(),
-                        extent: view.calculateExtent(map.getSize())
+                        extent: view.calculateExtent(window.ol_map.getSize())
                     }};
                 }}
 
                 // Apply map view (center and zoom) from Python
                 function setMapView(center, zoom) {{
                     try {{
-                        var view = map.getView();
+                        var view = window.ol_map.getView();
                         if (Array.isArray(center) && center.length === 2 && isFinite(center[0]) && isFinite(center[1])) {{
                             view.setCenter(center);
                         }}
@@ -1203,7 +1492,7 @@ class PreviewDialog(QDialog):
                         case 'Export': control = createExportControl(); break;
                     }}
                     if (control) {{
-                        map.addControl(control);
+                        window.ol_map.addControl(control);
                         window.ol_controls[controlName] = control;
                         if (controlName === 'LayerSwitcher') {{
                             refreshLayerSwitcher();
@@ -1229,7 +1518,7 @@ class PreviewDialog(QDialog):
                             delete window.ol_controls[controlName];
                             return;
                         }}
-                        map.removeControl(window.ol_controls[controlName]);
+                        window.ol_map.removeControl(window.ol_controls[controlName]);
                         delete window.ol_controls[controlName];
                         if (controlName === 'LayerSwitcher') {{
                             // Nothing else needed; DOM element is already removed by OL.
@@ -1255,16 +1544,16 @@ class PreviewDialog(QDialog):
                         mousePosMoveFn = function(evt) {{
                             try {{
                                 if (!evt || !evt.coordinate) return;
-                                const coord = ol.proj.transform(evt.coordinate, map.getView().getProjection(), 'EPSG:4326');
+                                const coord = ol.proj.transform(evt.coordinate, window.ol_map.getView().getProjection(), 'EPSG:4326');
                                 const lon = coord[0];
                                 const lat = coord[1];
                                 const fmt = function(v) {{ return isFinite(v) ? v.toFixed(5) : '–'; }};
                                 label.textContent = 'Lat: ' + fmt(lat) + ', Lon: ' + fmt(lon);
                             }} catch (e) {{}}
                         }};
-                        map.on('pointermove', mousePosMoveFn);
+                        window.ol_map.on('pointermove', mousePosMoveFn);
                         // Clear when pointer leaves map
-                        map.getViewport().addEventListener('mouseout', function() {{
+                        window.ol_map.getViewport().addEventListener('mouseout', function() {{
                             label.textContent = 'Lat: –, Lon: –';
                         }});
                         mousePosControl = new ol.control.Control({{ element: container }});
@@ -1278,11 +1567,11 @@ class PreviewDialog(QDialog):
                 function removeMousePositionControl() {{
                     try {{
                         if (mousePosMoveFn) {{
-                            map.un('pointermove', mousePosMoveFn);
+                            window.ol_map.un('pointermove', mousePosMoveFn);
                             mousePosMoveFn = null;
                         }}
                         if (mousePosControl) {{
-                            map.removeControl(mousePosControl);
+                            window.ol_map.removeControl(mousePosControl);
                             mousePosControl = null;
                         }}
                     }} catch (e) {{}}
@@ -1576,7 +1865,7 @@ class PreviewDialog(QDialog):
                         btn.addEventListener('click', function() {{
                             // Open a print-friendly window containing just the map element
                             try {{
-                                const canvas = map.getViewport().querySelector('canvas');
+                                const canvas = window.ol_map.getViewport().querySelector('canvas');
                                 if (canvas) {{
                                     const dataUrl = canvas.toDataURL('image/png');
                                     const w = window.open('', '_blank');
@@ -1600,7 +1889,7 @@ class PreviewDialog(QDialog):
                 function removePrintControl() {{
                     try {{
                         if (printControl) {{
-                            map.removeControl(printControl);
+                            window.ol_map.removeControl(printControl);
                             printControl = null;
                         }}
                     }} catch(e) {{}}
@@ -1622,7 +1911,7 @@ class PreviewDialog(QDialog):
                         btn.addEventListener('click', function() {{
                             try {{
                                 // Try to capture the primary canvas
-                                const canvas = map.getViewport().querySelector('canvas');
+                                const canvas = window.ol_map.getViewport().querySelector('canvas');
                                 if (canvas) {{
                                     const dataUrl = canvas.toDataURL('image/png');
                                     const w = window.open('', '_blank');
@@ -1649,33 +1938,40 @@ class PreviewDialog(QDialog):
                 function removeExportControl() {{
                     try {{
                         if (exportControl) {{
-                            map.removeControl(exportControl);
+                            window.ol_map.removeControl(exportControl);
                             exportControl = null;
                         }}
                     }} catch(e) {{}}
                 }}
 
-                // MEASURE TOOL (distance)
-                let measureSource = new ol.source.Vector();
-                let measureLayer = new ol.layer.Vector({{ 
-                    source: measureSource,
-                    style: new ol.style.Style({{
-                        stroke: new ol.style.Stroke({{ color: '#ff3b30', width: 2 }}),
-                        image: new ol.style.Circle({{
-                            radius: 4,
-                            fill: new ol.style.Fill({{ color: '#ff3b30' }}),
-                            stroke: new ol.style.Stroke({{ color: '#ffffff', width: 1 }})
-                        }})
-                    }})
-                }});
-                measureLayer.setZIndex(10000);
-                map.addLayer(measureLayer);
-
+                // MEASURE TOOL (distance) - variables declared here, initialized lazily
+                let measureSource = null;
+                let measureLayer = null;
                 let measureDraw = null;
                 let measureTooltipElement = null;
                 let measureTooltip = null;
                 let measureEnabled = false;
                 let measureControl = null;
+                
+                function initMeasureTool() {{
+                    if (measureSource) return; // Already initialized
+                    if (typeof ol === 'undefined' || !window.ol_map) return; // Not ready yet
+                    
+                    measureSource = new ol.source.Vector();
+                    measureLayer = new ol.layer.Vector({{ 
+                        source: measureSource,
+                        style: new ol.style.Style({{
+                            stroke: new ol.style.Stroke({{ color: '#ff3b30', width: 2 }}),
+                            image: new ol.style.Circle({{
+                                radius: 4,
+                                fill: new ol.style.Fill({{ color: '#ff3b30' }}),
+                                stroke: new ol.style.Stroke({{ color: '#ffffff', width: 1 }})
+                            }})
+                        }})
+                    }});
+                    measureLayer.setZIndex(10000);
+                    window.ol_map.addLayer(measureLayer);
+                }}
 
                 function createMeasureTooltip() {{
                     if (measureTooltipElement) {{
@@ -1689,12 +1985,12 @@ class PreviewDialog(QDialog):
                         offset: [0, -10],
                         positioning: 'bottom-center'
                     }});
-                    map.addOverlay(measureTooltip);
+                    window.ol_map.addOverlay(measureTooltip);
                 }}
 
                 function formatLength(line) {{
                     try {{
-                        const length = ol.sphere.getLength(line, {{ projection: map.getView().getProjection() }});
+                        const length = ol.sphere.getLength(line, {{ projection: window.ol_map.getView().getProjection() }});
                         if (length > 1000) {{
                             return (length / 1000).toFixed(2) + ' km';
                         }}
@@ -1706,6 +2002,8 @@ class PreviewDialog(QDialog):
 
                 function enableMeasure(mode) {{
                     // Currently only 'line' supported; extendable to 'area'
+                    initMeasureTool(); // Ensure measure tool is initialized
+                    if (!measureSource) return; // Not ready
                     disableMeasure();
                     createMeasureTooltip();
                     measureDraw = new ol.interaction.Draw({{
@@ -1713,14 +2011,14 @@ class PreviewDialog(QDialog):
                         type: 'LineString',
                         stopClick: true
                     }});
-                    map.addInteraction(measureDraw);
+                    window.ol_map.addInteraction(measureDraw);
 
                     let sketch = null;
                     measureDraw.on('drawstart', function(evt) {{
                         sketch = evt.feature;
                         measureTooltip.setPosition(evt.coordinate);
                         measureTooltipElement.innerHTML = '0.00 m';
-                        try {{ map.getTargetElement().style.cursor = 'crosshair'; }} catch(e) {{}}
+                        try {{ window.ol_map.getTargetElement().style.cursor = 'crosshair'; }} catch(e) {{}}
                         sketch.getGeometry().on('change', function(geomEvt) {{
                             const geom = geomEvt.target;
                             measureTooltip.setPosition(geom.getLastCoordinate());
@@ -1732,18 +2030,18 @@ class PreviewDialog(QDialog):
                         const geom = evt.feature.getGeometry();
                         measureTooltip.setPosition(geom.getLastCoordinate());
                         sketch = null;
-                        try {{ map.getTargetElement().style.cursor = ''; }} catch(e) {{}}
+                        try {{ window.ol_map.getTargetElement().style.cursor = ''; }} catch(e) {{}}
                     }});
                 }}
 
                 function disableMeasure() {{
                     if (measureDraw) {{
-                        map.removeInteraction(measureDraw);
+                        window.ol_map.removeInteraction(measureDraw);
                         measureDraw = null;
                     }}
-                    try {{ map.getTargetElement().style.cursor = ''; }} catch(e) {{}}
+                    try {{ window.ol_map.getTargetElement().style.cursor = ''; }} catch(e) {{}}
                     if (measureTooltip) {{
-                        map.removeOverlay(measureTooltip);
+                        window.ol_map.removeOverlay(measureTooltip);
                         measureTooltip = null;
                     }}
                     if (measureTooltipElement && measureTooltipElement.parentNode) {{
@@ -1751,7 +2049,7 @@ class PreviewDialog(QDialog):
                         measureTooltipElement = null;
                     }}
                     // Clear drawings when disabling
-                    try {{ measureSource.clear(); }} catch (e) {{}}
+                    try {{ if (measureSource) measureSource.clear(); }} catch (e) {{}}
                     // Do not clear existing measurements automatically; keep user sketches
                 }}
 
@@ -1794,7 +2092,7 @@ class PreviewDialog(QDialog):
                         }});
                         container.appendChild(btn);
                         measureControl = new ol.control.Control({{ element: container }});
-                        map.addControl(measureControl);
+                        window.ol_map.addControl(measureControl);
                     }} catch(e) {{
                         measureControl = null;
                         if (window.backend && window.backend.log_message) {{
@@ -1806,7 +2104,7 @@ class PreviewDialog(QDialog):
                 function removeMeasureControl() {{
                     try {{
                         if (measureControl) {{
-                            map.removeControl(measureControl);
+                            window.ol_map.removeControl(measureControl);
                             measureControl = null;
                         }}
                     }} catch(e) {{}}
@@ -2021,10 +2319,10 @@ class PreviewDialog(QDialog):
                     try {{
                         const container = document.createElement('div');
                         container.className = 'ol-control ol-unselectable';
-                        container.style.cssText = 'top: 8px; right: 8px; position: absolute; max-height: 50%; overflow:auto;';
+                        container.style.cssText = 'top: 8px; right: 8px; position: absolute;';
                         const panel = document.createElement('div');
                         panel.id = 'layer-switcher-panel';
-                        panel.style.cssText = 'background:rgba(255,255,255,0.85);border:1px solid #999;border-radius:4px;padding:6px;min-width:200px;';
+                        panel.style.cssText = 'background:rgba(255,255,255,0.92);border:1px solid #999;border-radius:4px;padding:8px 10px;min-width:180px;max-width:300px;';
                         const title = document.createElement('div');
                         title.textContent = 'Layers';
                         title.style.cssText = 'font:bold 12px sans-serif;margin-bottom:4px;';
@@ -2065,23 +2363,11 @@ class PreviewDialog(QDialog):
                             const layer = window.ol_layers[layerId];
                             if (!layer) return;
                             const row = document.createElement('div');
-                            row.style.cssText = 'display:flex;align-items:center;gap:6px;margin:2px 0;';
-                            const cb = document.createElement('input');
-                            cb.type = 'checkbox';
-                            cb.checked = !!layer.getVisible();
-                            cb.addEventListener('change', function() {{
-                                try {{
-                                    layer.setVisible(cb.checked);
-                                    if (window.backend && window.backend.layerVisibilityChanged) {{
-                                        window.backend.layerVisibilityChanged(layerId, cb.checked);
-                                    }}
-                                }} catch(e) {{}}
-                            }});
+                            row.style.cssText = 'display:flex;align-items:center;gap:6px;margin:2px 0;padding:4px;';
                             const label = document.createElement('span');
                             const title = layer.get('title') || layer.get('id') || layerId;
                             label.textContent = title;
                             label.style.cssText = 'font:12px sans-serif;';
-                            row.appendChild(cb);
                             row.appendChild(label);
                             list.appendChild(row);
                         }});
@@ -2101,84 +2387,116 @@ class PreviewDialog(QDialog):
         </body>
         </html>
         '''
-        # Delay setting HTML to allow UI to render first
-        from PyQt5.QtCore import QTimer
-        self.log_message("⏳ Scheduling HTML load...")
-        QTimer.singleShot(100, lambda: self._load_html_content(web_view, html_content))
+        self._log_status("Stage 8: HTML generation complete.")
+        return html_content
+
+    def initialize_openlayers_map(self, web_view):
+        """One-time initialization of the OpenLayers map."""
+        if self._map_initialized:
+            self.log_message("⚠ initialize_openlayers_map called again - skipping full init.")
+            return
+
+        self._log_status("Stage 6: initialize_openlayers_map called (first time)..." )
+        if web_view is None:
+            self._log_status("FAILED: web_view is None!")
+            return
+
+        self._map_initialized = True
+        self.reload_map_html_only()
+
+    def reload_map_html_only(self):
+        """Generates and loads the map's HTML content without re-initializing the view."""
+        self.log_message("🔄 Reloading map HTML...")
+        html_content = self._generate_openlayers_html()
+
+        if self._pending_html_timer is not None:
+            self._pending_html_timer.stop()
+
+        from PyQt6.QtCore import QTimer
+        self._pending_html_timer = QTimer(self)
+        self._pending_html_timer.setSingleShot(True)
+        self._pending_html_timer.timeout.connect(
+            lambda: self._load_html_content(self.web_view, html_content)
+        )
+        self._pending_html_timer.start(100)
 
     def _load_html_content(self, web_view, html_content):
-        """Helper to load HTML content into web view."""
+        """
+        COMPLETELY NEW HTML LOADING IMPLEMENTATION
+        Simple and direct approach without excessive debugging.
+        """
+        self._log_status("Stage 9: _load_html_content called...")
+        if web_view is None:
+            self._log_status("FAILED: web_view is None in _load_html_content!")
+            return
+        
         try:
-            self.log_message("🚀 Loading HTML content into WebEngine...")
-            # Use GeoServer URL as base for resolving relative URLs
-            base_url = QUrl(self.geoserver_url) if self.geoserver_url else QUrl()
+            from qgis.PyQt.QtCore import QUrl
+            self._log_status("Stage 10: Calling web_view.setHtml()...")
+            self._log_status(f"  HTML starts with: {html_content[:100]}...")
+            self._log_status(f"  HTML contains OL_JS_URL: {'OL_JS_URL' in html_content}")
+            self._log_status(f"  HTML contains ol.css: {'ol.css' in html_content}")
+            
+            # Use empty base URL - scripts are loaded via absolute URLs in script tags
+            base_url = QUrl()
+            self._log_status(f"  Base URL: (empty)")
+            
             web_view.setHtml(html_content, base_url)
-            self.log_message("✅ setHtml called")
-            
-            # Add JavaScript to verify OpenLayers source after map loads
-            verify_js = """
-            (function() {
-                // Wait for OpenLayers to be fully loaded
-                setTimeout(function() {
-                    try {
-                        // Check if OpenLayers is loaded
-                        if (typeof ol !== 'undefined') {
-                            // Try to determine source by checking script tags
-                            var scripts = document.getElementsByTagName('script');
-                            var olSource = 'Unknown';
-                            
-                            for (var i = 0; i < scripts.length; i++) {
-                                var src = scripts[i].src;
-                                if (src && src.indexOf('ol.js') !== -1) {
-                                    olSource = src;
-                                    break;
-                                }
-                            }
-                            
-                            // Report back to Python
-                            if (window.backend && window.backend.log_message) {
-                                window.backend.log_message('🔍 OpenLayers source verified: ' + olSource);
-                            }
-                            
-                            // Add version info if available
-                            if (ol.VERSION) {
-                                if (window.backend && window.backend.log_message) {
-                                    window.backend.log_message('📊 OpenLayers version: ' + ol.VERSION);
-                                }
-                            }
-                        } else {
-                            if (window.backend && window.backend.log_message) {
-                                window.backend.log_message('⚠️ OpenLayers not loaded properly');
-                            }
-                        }
-                    } catch(e) {
-                        if (window.backend && window.backend.log_message) {
-                            window.backend.log_message('❌ Error verifying OpenLayers: ' + e.message);
-                        }
-                    }
-                }, 1000); // Wait 1 second for everything to load
-            })();
-            """
-            
-            # Execute verification after a delay to ensure map is loaded
-            from PyQt5.QtCore import QTimer
-            QTimer.singleShot(1500, lambda: web_view.page().runJavaScript(verify_js))
+            self._log_status("  setHtml() called - waiting for browser...")
         except Exception as e:
-            self.log_message(f"❌ Error setting HTML: {e}", level=Qgis.Critical)
+            self._log_status(f"FAILED: Error in setHtml: {e}")
+            import traceback
+            self._log_status(f"  Traceback: {traceback.format_exc()}")
+
+    def _run_js(self, js_code, callback=None):
+        """Safely run JavaScript in the web view. Returns False if web_view is None."""
+        if self.web_view is None:
+            return False
+        if callback:
+            self.web_view.page().runJavaScript(js_code, callback)
+        else:
+            self.web_view.page().runJavaScript(js_code)
+        return True
 
     def setup_web_channel(self):
-        self.log_message("Setting up web channel...")
-        self.channel = QWebChannel(self.web_view.page())
-        self.web_view.page().setWebChannel(self.channel)
-        self.channel.registerObject('backend', self)
-        self.log_message("Web channel setup complete.")
+        """Set up QWebChannel for Python-JavaScript communication."""
+        if self._webchannel_initialized:
+            self.log_message("ℹ QWebChannel already initialized - skipping re-setup.")
+            return
+
+        self._log_status("Stage 13: setup_web_channel called (first time)..." )
+        self._webchannel_initialized = True
+        
+        if self.web_view is None or not WEBENGINE_AVAILABLE:
+            self._log_status("FAILED: web_view is None or WebEngine not available!")
+            return
+        
+        if QWebChannel is None:
+            self._log_status("FAILED: QWebChannel is None!")
+            return
+        
+        try:
+            self._log_status("  Creating QWebChannel...")
+            page = self.web_view.page()
+            self.channel = QWebChannel(page)
+            self._log_status("  Attaching channel to page...")
+            page.setWebChannel(self.channel)
+            self._log_status("  Registering 'backend' object...")
+            self.channel.registerObject('backend', self)
+            self._log_status("Stage 14: QWebChannel setup complete!")
+            self._log_status("  Python-JavaScript bridge is ready")
+        except Exception as e:
+            self._log_status(f"FAILED: QWebChannel error: {e}")
+            self.channel = None
 
     def _save_current_map_view(self):
         """Save the current map view (center and zoom) to restore later."""
         try:
+            if self.web_view is None:
+                return
             # Use JavaScript to get the current map view
             self.web_view.page().runJavaScript(
-                "JSON.stringify({center: map.getView().getCenter(), zoom: map.getView().getZoom()})",
+                "JSON.stringify({center: window.ol_map.getView().getCenter(), zoom: window.ol_map.getView().getZoom()})",
                 lambda result: self._on_map_view_saved(result)
             )
         except Exception as e:
@@ -2196,6 +2514,9 @@ class PreviewDialog(QDialog):
     def _restore_map_view(self):
         """Restore the previously saved map view."""
         try:
+            if self.web_view is None:
+                self.log_message("WebEngine disabled, skipping map view restore")
+                return
             if hasattr(self, 'saved_map_view') and self.saved_map_view:
                 center = self.saved_map_view.get('center', [0, 0])
                 zoom = self.saved_map_view.get('zoom', 2)
@@ -2205,7 +2526,7 @@ class PreviewDialog(QDialog):
                 (function() {{
                     try {{
                         console.log('Setting map view to:', [{center[0]}, {center[1]}], {zoom});
-                        var view = map.getView();
+                        var view = window.ol_map.getView();
                         view.setCenter([{center[0]}, {center[1]}]);
                         view.setZoom({zoom});
                         console.log('Map view set successfully');
@@ -2221,7 +2542,7 @@ class PreviewDialog(QDialog):
                 self.web_view.page().runJavaScript(js_code)
                 
                 # Also try again after a short delay to ensure it's applied
-                from PyQt5.QtCore import QTimer
+                from qgis.PyQt.QtCore import QTimer
                 QTimer.singleShot(500, lambda: self.web_view.page().runJavaScript(js_code))
                 
                 self.log_message(f"Map view restore requested: center={center}, zoom={zoom}")
@@ -2256,7 +2577,7 @@ class PreviewDialog(QDialog):
             self.initialize_openlayers_map(self.web_view)
             
             # Restore the saved state (zoom, pan, theme, layers) after a short delay
-            from PyQt5.QtCore import QTimer
+            from qgis.PyQt.QtCore import QTimer
             QTimer.singleShot(500, lambda: self._load_map_state_from_file(temp_file))
             
             self.log_message("✅ Map reloaded with cache cleared")
@@ -2269,45 +2590,49 @@ class PreviewDialog(QDialog):
     def _save_map_state_to_file(self, file_path):
         """Save the current map state to a file."""
         try:
-            # First, capture the current map view using JavaScript
-            js_code = """
-            (function() {
-                try {
-                    var view = map.getView();
-                    var center = view.getCenter();
-                    var zoom = view.getZoom();
-                    var extent = view.calculateExtent(map.getSize());
-                    return JSON.stringify({
-                        center: center,
-                        zoom: zoom,
-                        extent: extent
-                    });
-                } catch(e) {
-                    console.error('Error getting map view:', e);
-                    return JSON.stringify({});
-                }
-            })();
-            """
-            
-            # Execute JavaScript and wait for the result
-            from PyQt5.QtCore import QEventLoop
-            loop = QEventLoop()
-            
-            def handle_map_view(view_json):
-                try:
-                    # Parse the map view state
-                    view_state = json.loads(view_json) if view_json else {}
-                    self.saved_map_view = view_state
-                    self.log_message(f"📍 Current map view captured: center={view_state.get('center')}, zoom={view_state.get('zoom')}")
-                except Exception as e:
-                    self.log_message(f"Error parsing map view: {e}", level=Qgis.Warning)
-                finally:
-                    # Continue execution
-                    loop.quit()
-            
-            # Execute JavaScript and wait for the result
-            self.web_view.page().runJavaScript(js_code, handle_map_view)
-            loop.exec_()  # Wait for JavaScript to complete
+            if self.web_view is None:
+                self.log_message("WebEngine disabled, saving state without map view")
+                self.saved_map_view = {}
+            else:
+                # First, capture the current map view using JavaScript
+                js_code = """
+                (function() {
+                    try {
+                        var view = window.ol_map.getView();
+                        var center = view.getCenter();
+                        var zoom = view.getZoom();
+                        var extent = view.calculateExtent(window.ol_map.getSize());
+                        return JSON.stringify({
+                            center: center,
+                            zoom: zoom,
+                            extent: extent
+                        });
+                    } catch(e) {
+                        console.error('Error getting map view:', e);
+                        return JSON.stringify({});
+                    }
+                })();
+                """
+                
+                # Execute JavaScript and wait for the result
+                from qgis.PyQt.QtCore import QEventLoop
+                loop = QEventLoop()
+                
+                def handle_map_view(view_json):
+                    try:
+                        # Parse the map view state
+                        view_state = json.loads(view_json) if view_json else {}
+                        self.saved_map_view = view_state
+                        self.log_message(f"📍 Current map view captured: center={view_state.get('center')}, zoom={view_state.get('zoom')}")
+                    except Exception as e:
+                        self.log_message(f"Error parsing map view: {e}", level=Qgis.Warning)
+                    finally:
+                        # Continue execution
+                        loop.quit()
+                
+                # Execute JavaScript and wait for the result
+                self.web_view.page().runJavaScript(js_code, handle_map_view)
+                loop.exec()  # Wait for JavaScript to complete
             
             # Now continue with saving the state
             map_state = self._get_map_state()
@@ -2395,11 +2720,12 @@ class PreviewDialog(QDialog):
                 else:
                     self.rb_base_none.setChecked(True)
                 
-                # Apply theme to map
-                js_call = f"toggleDarkMode({str(self.is_dark_theme).lower()});"
-                self.web_view.page().runJavaScript(js_call)
-                js_call = f"toggleBaseLayer({str(base_visible).lower()});"
-                self.web_view.page().runJavaScript(js_call)
+                # Apply theme to map (only if WebEngine is available)
+                if self.web_view is not None:
+                    js_call = f"toggleDarkMode({str(self.is_dark_theme).lower()});"
+                    self.web_view.page().runJavaScript(js_call)
+                    js_call = f"toggleBaseLayer({str(base_visible).lower()});"
+                    self.web_view.page().runJavaScript(js_call)
             
             # Load layers
             layers_to_add = []
@@ -2421,19 +2747,19 @@ class PreviewDialog(QDialog):
                 label_text = f"{layer_info['display_name']} ({layer_info['layer_type']})"
                 tree_item = QTreeWidgetItem(self.added_layers_tree)
                 tree_item.setText(1, label_text)
-                tree_item.setData(0, Qt.UserRole, layer_info['layer_id'])
+                tree_item.setData(0, Qt.ItemDataRole.UserRole, layer_info['layer_id'])
                 
                 # Add visibility checkbox
                 visibility_checkbox = QCheckBox()
                 visibility_checkbox.setChecked(layer_info['visible'])
                 visibility_checkbox.stateChanged.connect(
                     lambda state, l_id=layer_info['layer_id']: 
-                    self.toggle_layer_visibility(l_id, state == Qt.Checked)
+                    self.toggle_layer_visibility(l_id, state == Qt.CheckState.Checked.value)
                 )
                 self.added_layers_tree.setItemWidget(tree_item, 0, visibility_checkbox)
                 
                 # Add transparency slider
-                slider = QSlider(Qt.Horizontal)
+                slider = QSlider(Qt.Orientation.Horizontal)
                 slider.setRange(0, 100)
                 slider.setValue(layer_info['transparency'])
                 slider.setToolTip("Adjust layer transparency")
@@ -2466,11 +2792,11 @@ class PreviewDialog(QDialog):
                     js_call = f"addWmtsLayer('{wmts_url}', '{layer_info['actual_name']}', '{layer_info['layer_id']}');"
                 
                 if js_call:
-                    self.web_view.page().runJavaScript(js_call)
+                    self._run_js(js_call)
                     
                     # Set layer title for Layer Control display
                     try:
-                        self.web_view.page().runJavaScript(
+                        self._run_js(
                             f"setLayerTitle('{layer_info['layer_id']}', {json.dumps(label_text)});"
                         )
                     except Exception:
@@ -2479,7 +2805,7 @@ class PreviewDialog(QDialog):
                     # Set visibility (but NOT transparency yet - do that after layer order is restored)
                     if not layer_info['visible']:
                         js_call = f"toggleLayerVisibility('{layer_info['layer_id']}', false);"
-                        self.web_view.page().runJavaScript(js_call)
+                        self._run_js(js_call)
             
             # Restore layer order FIRST
             if 'LayerOrder' in config:
@@ -2487,7 +2813,7 @@ class PreviewDialog(QDialog):
                     layer_order = json.loads(config.get('LayerOrder', 'order', fallback='[]'))
                     if layer_order:
                         js_call = f"refreshLayerOrder({json.dumps(layer_order)});"
-                        self.web_view.page().runJavaScript(js_call)
+                        self._run_js(js_call)
                 except Exception as e:
                     self.log_message(f"Error restoring layer order: {e}", level=Qgis.Warning)
             
@@ -2496,7 +2822,7 @@ class PreviewDialog(QDialog):
                 if layer_info['transparency'] != 100:
                     opacity = layer_info['transparency'] / 100.0
                     js_call = f"setLayerOpacity('{layer_info['layer_id']}', {opacity});"
-                    self.web_view.page().runJavaScript(js_call)
+                    self._run_js(js_call)
             
             # NOTE: Do NOT adjust tree widget height when toggling between CDN and Local modes
             # This preserves the minimum height set in left_panel.py
@@ -2515,7 +2841,7 @@ class PreviewDialog(QDialog):
                     extent = json.loads(config.get('View', 'extent', fallback='[]'))
                     
                     # Add a longer delay to ensure all other operations are complete
-                    from PyQt5.QtCore import QTimer
+                    from qgis.PyQt.QtCore import QTimer
                     
                     # Use a simple fixed delay
                     delay_ms = 500
@@ -2532,7 +2858,7 @@ class PreviewDialog(QDialog):
                         (function() {{
                             try {{
                                 console.log('Setting map view to:', [{center[0]}, {center[1]}], {zoom});
-                                var view = map.getView();
+                                var view = window.ol_map.getView();
                                 view.setCenter([{center[0]}, {center[1]}]);
                                 view.setZoom({zoom});
                                 console.log('Map view set successfully');
@@ -2546,19 +2872,19 @@ class PreviewDialog(QDialog):
                         
                         # Use multiple attempts with increasing delays to ensure it works
                         # This is especially important when toggling library modes
-                        from PyQt5.QtCore import QTimer
+                        from qgis.PyQt.QtCore import QTimer
                         
                         # Log that we're making multiple attempts
                         self.log_message("Making multiple attempts to set map view with increasing delays")
                         
                         # First attempt immediately
-                        self.web_view.page().runJavaScript(js_code)
+                        self._run_js(js_code)
                         
                         # Additional attempts with increasing delays
-                        QTimer.singleShot(500, lambda: self.web_view.page().runJavaScript(js_code))
-                        QTimer.singleShot(1000, lambda: self.web_view.page().runJavaScript(js_code))
-                        QTimer.singleShot(2000, lambda: self.web_view.page().runJavaScript(js_code))
-                        QTimer.singleShot(3000, lambda: self.web_view.page().runJavaScript(js_code))
+                        QTimer.singleShot(500, lambda: self._run_js(js_code))
+                        QTimer.singleShot(1000, lambda: self._run_js(js_code))
+                        QTimer.singleShot(2000, lambda: self._run_js(js_code))
+                        QTimer.singleShot(3000, lambda: self._run_js(js_code))
                     # End of map view restoration
                 except Exception as e:
                     self.log_message(f"Error restoring map view: {e}", level=Qgis.Warning)
@@ -2577,7 +2903,31 @@ class PreviewDialog(QDialog):
     @pyqtSlot(bool)
     def on_webview_load_finished(self, ok):
         """Handle loadFinished from the QWebEngineView and log status."""
+        self._log_status(f"Stage 11: loadFinished signal received!")
+        self._log_status(f"  success = {ok}")
+        
+        if self.web_view is None:
+            self._log_status("FAILED: web_view is None in on_webview_load_finished!")
+            return
+        
+        self._log_status(f"  web_view.url() = {self.web_view.url().toString()}")
+        self._log_status(f"  web_view visible = {self.web_view.isVisible()}")
+        self._log_status(f"  web_view size = {self.web_view.size().width()}x{self.web_view.size().height()}")
+        
         self.is_webview_loading = False
+        
+        if not ok:
+            self._log_status("FAILED: Page load failed!")
+            self._log_status("  Possible causes:")
+            self._log_status("  - Network blocked (firewall/proxy)")
+            self._log_status("  - CDN unreachable")
+            self._log_status("  - Local server not running")
+            self._log_status("  - Invalid HTML content")
+            return
+        
+        self._log_status("Stage 12: Page loaded successfully!")
+        self._log_status("  Setting up QWebChannel...")
+        
         if ok:
             self.log_message("Web view finished loading successfully.")
             
@@ -2585,7 +2935,7 @@ class PreviewDialog(QDialog):
             try:
                 current_mode = self.get_library_mode()
                 js_call = f"updateLibraryModeIndicator('{current_mode}');"
-                self.web_view.page().runJavaScript(js_call)
+                self._run_js(js_call)
                 self.log_message(f"Updated library mode indicator to: {current_mode} mode")
             except Exception as e:
                 self.log_message(f"Error updating library mode indicator: {e}", level=Qgis.Warning)
@@ -2610,17 +2960,17 @@ class PreviewDialog(QDialog):
                         
                         # Load the map state from the temp file with a short delay
                         # to ensure the map is fully initialized
-                        from PyQt5.QtCore import QTimer
+                        from qgis.PyQt.QtCore import QTimer
                         QTimer.singleShot(500, lambda: self._load_map_state_from_file(temp_file))
                     else:
                         self.log_message(f"⚠️ Temporary map state file not found: {temp_file}", level=Qgis.Warning)
                         # Fallback to regular reload
-                        from PyQt5.QtCore import QTimer
+                        from qgis.PyQt.QtCore import QTimer
                         QTimer.singleShot(200, lambda: self.clear_cache_and_reload())
                 else:
                     self.log_message("No temporary map state file specified, using regular reload")
                     # Fallback to regular reload
-                    from PyQt5.QtCore import QTimer
+                    from qgis.PyQt.QtCore import QTimer
                     QTimer.singleShot(200, lambda: self.clear_cache_and_reload())
                 return
             
@@ -2634,15 +2984,19 @@ class PreviewDialog(QDialog):
             if self._js_call_queue:
                 self.log_message(f"Executing {len(self._js_call_queue)} queued JS calls.")
                 for js_call in self._js_call_queue:
-                    self.web_view.page().runJavaScript(js_call)
+                    self._run_js(js_call)
                 self._js_call_queue.clear()
         else:
-            self.log_message("Web view failed to load HTML content.", level=Qgis.Warning)
-            # Provide basic feedback in the web view if load failed
-            try:
-                self.web_view.setHtml("<h1>Error: Could not load map content.</h1>")
-            except Exception as e:
-                self.log_message(f"Failed to set error HTML: {e}", level=Qgis.Critical)
+            # Note: loadFinished can fire with ok=False for sub-resources (CDN scripts, etc.)
+            # even when the main HTML content loaded successfully. Do NOT replace the content
+            # with an error message as the map may still be functional.
+            if not hasattr(self, '_webview_load_warned'):
+                self._webview_load_warned = True
+                current_url = self.web_view.url().toString() if self.web_view else ""
+                self.log_message(f"Web view loadFinished reported failure (URL={current_url}). This may be normal for external resources.", level=Qgis.Warning)
+                # Still try to apply controls - the map content may have loaded successfully
+                self._apply_saved_controls()
+                self._restore_map_view()
     
     def _apply_saved_controls(self):
         """Apply controls to the map based on checkbox state.
@@ -2652,7 +3006,7 @@ class PreviewDialog(QDialog):
         If checkbox is ON, the control appears on the map.
         """
         try:
-            if hasattr(self, 'control_checkboxes') and self.control_checkboxes:
+            if hasattr(self, 'right_panel') and self.right_panel and hasattr(self.right_panel, 'control_checkboxes') and self.right_panel.control_checkboxes:
                 control_map = {
                     "Zoom Control": "Zoom",
                     "Scale Control": "ScaleLine",
@@ -2669,7 +3023,7 @@ class PreviewDialog(QDialog):
                     "Mode Indicator": "ModeIndicator"
                 }
                 
-                for control_name, checkbox in self.control_checkboxes.items():
+                for control_name, checkbox in self.right_panel.control_checkboxes.items():
                     ol_control_name = control_map.get(control_name)
                     if not ol_control_name:
                         continue
@@ -2680,7 +3034,7 @@ class PreviewDialog(QDialog):
                             js_call = f"toggleModeIndicator(true);"
                         else:
                             js_call = f"addControl('{ol_control_name}');"
-                        self.web_view.page().runJavaScript(js_call)
+                        self._run_js(js_call)
                         self.log_message(f"✓ Control ON: {control_name}")
                     else:
                         # Checkbox is OFF - remove control from map
@@ -2688,7 +3042,7 @@ class PreviewDialog(QDialog):
                             js_call = f"toggleModeIndicator(false);"
                         else:
                             js_call = f"removeControl('{ol_control_name}');"
-                        self.web_view.page().runJavaScript(js_call)
+                        self._run_js(js_call)
                         self.log_message(f"✗ Control OFF: {control_name}")
         except Exception as e:
             self.log_message(f"Error applying saved controls: {e}", level=Qgis.Warning)
@@ -2700,7 +3054,7 @@ class PreviewDialog(QDialog):
         the checkbox is checked, and vice versa.
         """
         try:
-            if not hasattr(self, 'control_checkboxes') or 'Mode Indicator' not in self.control_checkboxes:
+            if not hasattr(self, 'right_panel') or not self.right_panel or not hasattr(self.right_panel, 'control_checkboxes') or 'Mode Indicator' not in self.right_panel.control_checkboxes:
                 return
             
             # Get the current visibility state of the mode indicator from the map
@@ -2721,7 +3075,7 @@ class PreviewDialog(QDialog):
                     is_visible_bool = is_visible if isinstance(is_visible, bool) else (is_visible == 'true' or is_visible == True)
                     
                     # Update the checkbox state without triggering the signal
-                    checkbox = self.control_checkboxes['Mode Indicator']
+                    checkbox = self.right_panel.control_checkboxes['Mode Indicator']
                     checkbox.blockSignals(True)
                     checkbox.setChecked(is_visible_bool)
                     checkbox.blockSignals(False)
@@ -2732,8 +3086,9 @@ class PreviewDialog(QDialog):
             
             # Run the JavaScript to get the visibility state but don't block other operations
             # Use a QTimer to delay this operation slightly to ensure it doesn't interfere with map rendering
-            from PyQt5.QtCore import QTimer
-            QTimer.singleShot(100, lambda: self.web_view.page().runJavaScript(js_code, update_checkbox))
+            from qgis.PyQt.QtCore import QTimer
+            if self.web_view is not None:
+                QTimer.singleShot(100, lambda: self._run_js(js_code, update_checkbox))
         except Exception as e:
             self.log_message(f"Error synchronizing Mode Indicator checkbox: {e}", level=Qgis.Warning)
 
@@ -2751,7 +3106,7 @@ class PreviewDialog(QDialog):
 
         for item in selected_items:
             display_name = item.text()
-            layer_data = item.data(Qt.UserRole)
+            layer_data = item.data(Qt.ItemDataRole.UserRole)
             actual_name = layer_data['actual_name']
             layer_type = layer_data.get('layer_type', 'VECTOR')  # Default to VECTOR if not specified
             # Selected add type from UI (via radio buttons)
@@ -2767,14 +3122,14 @@ class PreviewDialog(QDialog):
             tree_item = QTreeWidgetItem(self.added_layers_tree)
             # Column 1 is now the Layer Name; Column 0 is Visibility
             tree_item.setText(1, label_text)
-            tree_item.setData(0, Qt.UserRole, layer_id)
+            tree_item.setData(0, Qt.ItemDataRole.UserRole, layer_id)
 
             visibility_checkbox = QCheckBox()
             visibility_checkbox.setChecked(True)
-            visibility_checkbox.stateChanged.connect(lambda state, l_id=layer_id: self.toggle_layer_visibility(l_id, state == Qt.Checked))
+            visibility_checkbox.stateChanged.connect(lambda state, l_id=layer_id: self.toggle_layer_visibility(l_id, state == Qt.CheckState.Checked.value))
             self.added_layers_tree.setItemWidget(tree_item, 0, visibility_checkbox)
 
-            slider = QSlider(Qt.Horizontal)
+            slider = QSlider(Qt.Orientation.Horizontal)
             slider.setRange(0, 100)
             slider.setValue(100)
             slider.setToolTip("Adjust layer transparency")
@@ -2829,7 +3184,7 @@ class PreviewDialog(QDialog):
         is_raster = False
         if len(selected_items) == 1:
             item = selected_items[0]
-            layer_data = item.data(Qt.UserRole)
+            layer_data = item.data(Qt.ItemDataRole.UserRole)
             if isinstance(layer_data, dict):
                 layer_type = layer_data.get('layer_type')
                 # Check for various raster/image layer types that GeoServer might return
@@ -2864,9 +3219,9 @@ class PreviewDialog(QDialog):
             return
 
         for item in selected_items:
-            layer_id = item.data(0, Qt.UserRole)
+            layer_id = item.data(0, Qt.ItemDataRole.UserRole)
             if layer_id in self.added_layers:
-                js_call = f"map.removeLayer(window.ol_layers['{layer_id}']); delete window.ol_layers['{layer_id}'];"
+                js_call = f"window.ol_map.removeLayer(window.ol_layers['{layer_id}']); delete window.ol_layers['{layer_id}'];"
                 self.web_view.page().runJavaScript(js_call)
                 # Update LayerSwitcher if present
                 try:
@@ -2900,7 +3255,7 @@ class PreviewDialog(QDialog):
         try:
             for i in range(self.added_layers_tree.topLevelItemCount()):
                 item = self.added_layers_tree.topLevelItem(i)
-                layer_id = item.data(0, Qt.UserRole)
+                layer_id = item.data(0, Qt.ItemDataRole.UserRole)
                 info = self.added_layers.get(layer_id)
                 if not info:
                     continue
@@ -2924,7 +3279,7 @@ class PreviewDialog(QDialog):
         index = self.added_layers_tree.indexOfTopLevelItem(selected_item)
         if index > 0:
             # Preserve state
-            layer_id = selected_item.data(0, Qt.UserRole)
+            layer_id = selected_item.data(0, Qt.ItemDataRole.UserRole)
             prev_cb = self.added_layers_tree.itemWidget(selected_item, 0)
             prev_sl = self.added_layers_tree.itemWidget(selected_item, 2)
             prev_checked = prev_cb.isChecked() if prev_cb is not None else True
@@ -2937,10 +3292,10 @@ class PreviewDialog(QDialog):
             # Recreate and attach widgets with preserved state
             new_cb = QCheckBox()
             new_cb.setChecked(prev_checked)
-            new_cb.stateChanged.connect(lambda state, l_id=layer_id: self.toggle_layer_visibility(l_id, state == Qt.Checked))
+            new_cb.stateChanged.connect(lambda state, l_id=layer_id: self.toggle_layer_visibility(l_id, state == Qt.CheckState.Checked.value))
             self.added_layers_tree.setItemWidget(selected_item, 0, new_cb)
 
-            new_sl = QSlider(Qt.Horizontal)
+            new_sl = QSlider(Qt.Orientation.Horizontal)
             new_sl.setRange(0, 100)
             new_sl.setValue(prev_value)
             new_sl.setToolTip("Adjust layer transparency")
@@ -2962,7 +3317,7 @@ class PreviewDialog(QDialog):
         index = self.added_layers_tree.indexOfTopLevelItem(selected_item)
         if index < self.added_layers_tree.topLevelItemCount() - 1:
             # Preserve state
-            layer_id = selected_item.data(0, Qt.UserRole)
+            layer_id = selected_item.data(0, Qt.ItemDataRole.UserRole)
             prev_cb = self.added_layers_tree.itemWidget(selected_item, 0)
             prev_sl = self.added_layers_tree.itemWidget(selected_item, 2)
             prev_checked = prev_cb.isChecked() if prev_cb is not None else True
@@ -2975,10 +3330,10 @@ class PreviewDialog(QDialog):
             # Recreate and attach widgets with preserved state
             new_cb = QCheckBox()
             new_cb.setChecked(prev_checked)
-            new_cb.stateChanged.connect(lambda state, l_id=layer_id: self.toggle_layer_visibility(l_id, state == Qt.Checked))
+            new_cb.stateChanged.connect(lambda state, l_id=layer_id: self.toggle_layer_visibility(l_id, state == Qt.CheckState.Checked.value))
             self.added_layers_tree.setItemWidget(selected_item, 0, new_cb)
 
-            new_sl = QSlider(Qt.Horizontal)
+            new_sl = QSlider(Qt.Orientation.Horizontal)
             new_sl.setRange(0, 100)
             new_sl.setValue(prev_value)
             new_sl.setToolTip("Adjust layer transparency")
@@ -2992,102 +3347,22 @@ class PreviewDialog(QDialog):
 
             self.added_layers_tree.setCurrentItem(selected_item)
             self.refresh_layer_order()
-
-    def move_layer_to_top(self):
-        selected_item = self.added_layers_tree.currentItem()
-        if not selected_item:
-            return
-        index = self.added_layers_tree.indexOfTopLevelItem(selected_item)
-        if index > 0:
-            # Preserve state
-            layer_id = selected_item.data(0, Qt.UserRole)
-            prev_cb = self.added_layers_tree.itemWidget(selected_item, 0)
-            prev_sl = self.added_layers_tree.itemWidget(selected_item, 2)
-            prev_checked = prev_cb.isChecked() if prev_cb is not None else True
-            prev_value = prev_sl.value() if prev_sl is not None else 100
-
-            # Move item to top
-            self.added_layers_tree.takeTopLevelItem(index)
-            self.added_layers_tree.insertTopLevelItem(0, selected_item)
-
-            # Recreate and attach widgets with preserved state
-            new_cb = QCheckBox()
-            new_cb.setChecked(prev_checked)
-            new_cb.stateChanged.connect(lambda state, l_id=layer_id: self.toggle_layer_visibility(l_id, state == Qt.Checked))
-            self.added_layers_tree.setItemWidget(selected_item, 0, new_cb)
-
-            new_sl = QSlider(Qt.Horizontal)
-            new_sl.setRange(0, 100)
-            new_sl.setValue(prev_value)
-            new_sl.setToolTip("Adjust layer transparency")
-            new_sl.valueChanged.connect(lambda value, l_id=layer_id: self.on_transparency_changed(l_id, value))
-            self.added_layers_tree.setItemWidget(selected_item, 2, new_sl)
-
-            # Update stored refs
-            if layer_id in self.added_layers:
-                self.added_layers[layer_id]['visibility_widget'] = new_cb
-                self.added_layers[layer_id]['slider_widget'] = new_sl
-
-            self.added_layers_tree.setCurrentItem(selected_item)
-            self.refresh_layer_order()
-
-    def move_layer_to_bottom(self):
-        selected_item = self.added_layers_tree.currentItem()
-        if not selected_item:
-            return
-        index = self.added_layers_tree.indexOfTopLevelItem(selected_item)
-        if index < self.added_layers_tree.topLevelItemCount() - 1:
-            # Preserve state
-            layer_id = selected_item.data(0, Qt.UserRole)
-            prev_cb = self.added_layers_tree.itemWidget(selected_item, 0)
-            prev_sl = self.added_layers_tree.itemWidget(selected_item, 2)
-            prev_checked = prev_cb.isChecked() if prev_cb is not None else True
-            prev_value = prev_sl.value() if prev_sl is not None else 100
-
-            # Move item to bottom
-            self.added_layers_tree.takeTopLevelItem(index)
-            self.added_layers_tree.insertTopLevelItem(self.added_layers_tree.topLevelItemCount(), selected_item)
-
-            # Recreate and attach widgets with preserved state
-            new_cb = QCheckBox()
-            new_cb.setChecked(prev_checked)
-            new_cb.stateChanged.connect(lambda state, l_id=layer_id: self.toggle_layer_visibility(l_id, state == Qt.Checked))
-            self.added_layers_tree.setItemWidget(selected_item, 0, new_cb)
-
-            new_sl = QSlider(Qt.Horizontal)
-            new_sl.setRange(0, 100)
-            new_sl.setValue(prev_value)
-            new_sl.setToolTip("Adjust layer transparency")
-            new_sl.valueChanged.connect(lambda value, l_id=layer_id: self.on_transparency_changed(l_id, value))
-            self.added_layers_tree.setItemWidget(selected_item, 2, new_sl)
-
-            # Update stored refs
-            if layer_id in self.added_layers:
-                self.added_layers[layer_id]['visibility_widget'] = new_cb
-                self.added_layers[layer_id]['slider_widget'] = new_sl
-
-            self.added_layers_tree.setCurrentItem(selected_item)
-            self.refresh_layer_order()
+    
+    def _on_layers_reordered(self):
+        """Handle drag-and-drop reordering of layers in the tree widget."""
+        # Refresh the layer order in the map after drag-and-drop
+        self.refresh_layer_order()
 
     def refresh_layer_order(self):
         layer_ids = []
         for i in range(self.added_layers_tree.topLevelItemCount()):
             item = self.added_layers_tree.topLevelItem(i)
-            layer_id = item.data(0, Qt.UserRole)
+            layer_id = item.data(0, Qt.ItemDataRole.UserRole)
             layer_ids.append(layer_id)
         
         layer_ids.reverse() # OpenLayers draws layers from bottom up
         js_call = f"refreshLayerOrder({json.dumps(layer_ids)});"
         self.web_view.page().runJavaScript(js_call)
-
-    @pyqtSlot(list)
-    def on_layers_reordered_by_drag(self, layer_ids):
-        """Handle layer reordering when items are dragged and dropped in the tree."""
-        try:
-            self._reattach_added_tree_widgets()
-            self.refresh_layer_order()
-        except Exception as e:
-            self.log_message(f"Error handling layer reordering: {e}", level=Qgis.Warning)
 
     def toggle_sort_order(self, event):
         self.sort_order = 'desc' if self.sort_order == 'asc' else 'asc'
@@ -3097,33 +3372,16 @@ class PreviewDialog(QDialog):
     def filter_layers(self, text):
         """
         Filter layers based on wildcard pattern (* and ? wildcards).
-        If text is typed and no layers are loaded yet, automatically load them.
         
         Args:
             text: Search pattern with optional wildcards (* for any chars, ? for single char)
         """
-        self.log_message(f"DEBUG filter_layers: text='{text}', all_layers count={len(self.all_layers) if self.all_layers else 0}")
-        
-        # Store the search text for use after loading
-        self.pending_search_text = text
-        
-        # If text is provided but no layers loaded yet, start loading
-        if text.strip() and not self.all_layers:
-            self.log_message(f"DEBUG: Text provided but no layers loaded, starting layer loading")
-            self.start_layer_loading()
-            return
-        
-        # If no layers at all, just clear and return
-        if not self.all_layers:
-            self.log_message(f"DEBUG: No layers at all, clearing list")
-            self.layers_list.clear()
-            return
-        
         try:
             from wildcard_filter import WildcardFilter
         except ImportError:
             try:
-                from .wildcard_filter import WildcardFilter
+                _wf_module = _load_local_module("wildcard_filter")
+                WildcardFilter = _wf_module.WildcardFilter
             except ImportError:
                 # Fallback: import directly if already in path
                 import wildcard_filter as wf
@@ -3134,12 +3392,10 @@ class PreviewDialog(QDialog):
         # If no text, show all layers
         if not text.strip():
             filtered_layers = self.all_layers[:]
-            self.log_message(f"DEBUG: No search text, showing all {len(filtered_layers)} layers")
         else:
             # Use wildcard filter for pattern matching
             filtered_layers = [layer for layer in self.all_layers 
                              if WildcardFilter.matches_pattern(layer['display_name'], text)]
-            self.log_message(f"DEBUG: Filtering with text '{text}', found {len(filtered_layers)} matching layers")
         
         # Sort based on current sort order
         if self.sort_order == 'asc':
@@ -3150,13 +3406,11 @@ class PreviewDialog(QDialog):
         for layer_data in filtered_layers:
             item = QListWidgetItem(layer_data['display_name'])
             # Store the full dict to keep access to layer_type and other attributes
-            item.setData(Qt.UserRole, layer_data)
+            item.setData(Qt.ItemDataRole.UserRole, layer_data)
             self.layers_list.addItem(item)
-        
-        self.log_message(f"Filtered layers: {len(filtered_layers)} results for search '{text}'")
 
     def toggle_base_layer(self, state):
-        visible = state == Qt.Checked
+        visible = state == Qt.CheckState.Checked.value
         js_call = f"toggleBaseLayer({str(visible).lower()});"
         self.web_view.page().runJavaScript(js_call)
 
@@ -3178,17 +3432,22 @@ class PreviewDialog(QDialog):
         Sync the corresponding checkbox in the left 'Added Layers' tree.
         """
         try:
+            self.log_message(f"layerVisibilityChanged called: layer_id={layer_id}, visible={visible}")
             for i in range(self.added_layers_tree.topLevelItemCount()):
                 item = self.added_layers_tree.topLevelItem(i)
-                if item.data(0, Qt.UserRole) == layer_id:
+                item_layer_id = item.data(0, Qt.ItemDataRole.UserRole)
+                if item_layer_id == layer_id:
                     cb = self.added_layers_tree.itemWidget(item, 0)
                     if cb is not None:
                         cb.blockSignals(True)
                         cb.setChecked(visible)
                         cb.blockSignals(False)
+                        self.log_message(f"✓ Synced checkbox for layer {layer_id} to {visible}")
                     break
-        except Exception:
-            pass
+            # Update the master "Make All Map Layers Visible" checkbox state
+            self.update_select_all_checkbox_state()
+        except Exception as e:
+            self.log_message(f"Error in layerVisibilityChanged: {e}", level=Qgis.Warning)
 
     def clear_openlayers_map(self):
         self.web_view.page().runJavaScript("clearMap();")
@@ -3225,7 +3484,7 @@ class PreviewDialog(QDialog):
                     self.splitter.setSizes([450, 550, 300])
                     self.log_message("📐 Panels restored (L:450px, M:550px, R:300px)")
                     # Restore control positions after restoring panels
-                    from PyQt5.QtCore import QTimer
+                    from qgis.PyQt.QtCore import QTimer
                     QTimer.singleShot(100, self._restore_control_positions)
                 else:
                     # Save current control positions before collapsing
@@ -3234,7 +3493,7 @@ class PreviewDialog(QDialog):
                     self.splitter.setSizes([0, 1000, 0])
                     self.log_message("🗺️ Full map mode enabled")
                     # Reposition controls to maintain relative positions
-                    from PyQt5.QtCore import QTimer
+                    from qgis.PyQt.QtCore import QTimer
                     QTimer.singleShot(100, self._reposition_controls_full_map)
         except Exception as e:
             self.log_message(f"❌ Error toggling full map: {str(e)}", level=Qgis.Warning)
@@ -3291,7 +3550,7 @@ class PreviewDialog(QDialog):
         if not selected_items:
             return
 
-        layer_id = selected_items[0].data(0, Qt.UserRole)
+        layer_id = selected_items[0].data(0, Qt.ItemDataRole.UserRole)
         layer_info = self.added_layers.get(layer_id)
         if not layer_info:
             return
@@ -3423,10 +3682,47 @@ class PreviewDialog(QDialog):
         # Delegate to the master visibility handler
         self.master_visibility_handler.update_select_all_checkbox_state()
 
+    def refresh_layer_order(self):
+        layer_ids = []
+        for i in range(self.added_layers_tree.topLevelItemCount()):
+            item = self.added_layers_tree.topLevelItem(i)
+            layer_id = item.data(0, Qt.ItemDataRole.UserRole)
+            layer_ids.append(layer_id)
+        
+        layer_ids.reverse() # OpenLayers draws layers from bottom up
+        js_call = f"refreshLayerOrder({json.dumps(layer_ids)});"
+        self.web_view.page().runJavaScript(js_call)
+
+    def filter_layers(self, text):
+        """Filter layers list based on search text."""
+        if not hasattr(self, 'layers_list'):
+            return
+        for i in range(self.layers_list.count()):
+            item = self.layers_list.item(i)
+            if item:
+                item.setHidden(text.lower() not in item.text().lower())
+
+    def toggle_sort_order(self, event):
+        self.sort_order = 'desc' if self.sort_order == 'asc' else 'asc'
+        self.header_label.setText(f"Available Layers (Click to sort: {'Z-A' if self.sort_order == 'desc' else 'A-Z'})")
+        self.all_layers.sort(key=lambda x: x['display_name'], reverse=self.sort_order == 'desc')
+        self.layers_list.clear()
+        for layer_data in self.all_layers:
+            item = QListWidgetItem(layer_data['display_name'])
+            item.setData(Qt.ItemDataRole.UserRole, layer_data['actual_name'])
+            self.layers_list.addItem(item)
+        self.filter_layers(self.search_box.text())
+
     def toggle_base_layer(self, state):
-        visible = state == Qt.Checked
+        visible = state == Qt.CheckState.Checked.value
         js_call = f"toggleBaseLayer({str(visible).lower()});"
         self.web_view.page().runJavaScript(js_call)
+
+
+    def on_available_layer_double_clicked(self, item):
+        """Handle double-click on an available layer to add it to the map."""
+        self.layers_list.setCurrentItem(item)
+        self.add_layers_to_map()
 
     def on_added_layer_double_clicked(self, item, column):
         """Handle double-click on an added layer to zoom to its extent."""
@@ -3437,7 +3733,7 @@ class PreviewDialog(QDialog):
             self.added_layers_tree.setCurrentItem(item)
             
             # Get the layer ID directly from the clicked item
-            layer_id = item.data(0, Qt.UserRole)
+            layer_id = item.data(0, Qt.ItemDataRole.UserRole)
             self.log_message(f"🔍 Double-clicked layer ID: {layer_id}")
             
             # Call zoom_to_selected_layer which will use the selected item
@@ -3451,7 +3747,7 @@ class PreviewDialog(QDialog):
         
         for i in range(self.added_layers_tree.topLevelItemCount()):
             item = self.added_layers_tree.topLevelItem(i)
-            layer_id = item.data(0, Qt.UserRole)
+            layer_id = item.data(0, Qt.ItemDataRole.UserRole)
             layer_info = self.added_layers.get(layer_id, {})
             
             # Get visibility state
@@ -3494,7 +3790,7 @@ class PreviewDialog(QDialog):
     
     def _on_save_state(self):
         """Save the current map state to a .geos file."""
-        from PyQt5.QtWidgets import QFileDialog
+        from qgis.PyQt.QtWidgets import QFileDialog
         
         file_path, _ = QFileDialog.getSaveFileName(
             self, 
@@ -3590,7 +3886,7 @@ class PreviewDialog(QDialog):
     
     def _on_load_state(self):
         """Load a map state from a .geos file."""
-        from PyQt5.QtWidgets import QFileDialog
+        from qgis.PyQt.QtWidgets import QFileDialog
         
         file_path, _ = QFileDialog.getOpenFileName(
             self, 
@@ -3623,11 +3919,12 @@ class PreviewDialog(QDialog):
                 else:
                     self.rb_base_none.setChecked(True)
                 
-                # Apply theme to map
-                js_call = f"toggleDarkMode({str(self.is_dark_theme).lower()});"
-                self.web_view.page().runJavaScript(js_call)
-                js_call = f"toggleBaseLayer({str(base_visible).lower()});"
-                self.web_view.page().runJavaScript(js_call)
+                # Apply theme to map (only if WebEngine is available)
+                if self.web_view is not None:
+                    js_call = f"toggleDarkMode({str(self.is_dark_theme).lower()});"
+                    self.web_view.page().runJavaScript(js_call)
+                    js_call = f"toggleBaseLayer({str(base_visible).lower()});"
+                    self.web_view.page().runJavaScript(js_call)
             
             # Load layers
             layers_to_add = []
@@ -3649,19 +3946,19 @@ class PreviewDialog(QDialog):
                 label_text = f"{layer_info['display_name']} ({layer_info['layer_type']})"
                 tree_item = QTreeWidgetItem(self.added_layers_tree)
                 tree_item.setText(1, label_text)
-                tree_item.setData(0, Qt.UserRole, layer_info['layer_id'])
+                tree_item.setData(0, Qt.ItemDataRole.UserRole, layer_info['layer_id'])
                 
                 # Add visibility checkbox
                 visibility_checkbox = QCheckBox()
                 visibility_checkbox.setChecked(layer_info['visible'])
                 visibility_checkbox.stateChanged.connect(
                     lambda state, l_id=layer_info['layer_id']: 
-                    self.toggle_layer_visibility(l_id, state == Qt.Checked)
+                    self.toggle_layer_visibility(l_id, state == Qt.CheckState.Checked.value)
                 )
                 self.added_layers_tree.setItemWidget(tree_item, 0, visibility_checkbox)
                 
                 # Add transparency slider
-                slider = QSlider(Qt.Horizontal)
+                slider = QSlider(Qt.Orientation.Horizontal)
                 slider.setRange(0, 100)
                 slider.setValue(layer_info['transparency'])
                 slider.setToolTip("Adjust layer transparency")
@@ -3694,24 +3991,35 @@ class PreviewDialog(QDialog):
                     js_call = f"addWmtsLayer('{wmts_url}', '{layer_info['actual_name']}', '{layer_info['layer_id']}');"
                 
                 if js_call:
-                    self.web_view.page().runJavaScript(js_call)
-                    # Ensure the LayerSwitcher shows a friendly title, consistent with left tree
-                    try:
-                        self.web_view.page().runJavaScript(
-                            f"setLayerTitle('{layer_info['layer_id']}', {json.dumps(label_text)});"
-                        )
-                    except Exception:
-                        pass
-                    
-                    # Set visibility and transparency
-                    if not layer_info['visible']:
-                        js_call = f"toggleLayerVisibility('{layer_info['layer_id']}', false);"
+                    # Queue JS calls if webview is still loading
+                    if self.is_webview_loading:
+                        self.log_message(f"Webview loading, queuing JS call for layer: {layer_info['actual_name']}")
+                        self._js_call_queue.append(js_call)
+                        self._js_call_queue.append(f"setLayerTitle('{layer_info['layer_id']}', {json.dumps(label_text)});")
+                        if not layer_info['visible']:
+                            self._js_call_queue.append(f"toggleLayerVisibility('{layer_info['layer_id']}', false);")
+                        if layer_info['transparency'] != 100:
+                            opacity = layer_info['transparency'] / 100.0
+                            self._js_call_queue.append(f"setLayerOpacity('{layer_info['layer_id']}', {opacity});")
+                    else:
                         self.web_view.page().runJavaScript(js_call)
-                    
-                    if layer_info['transparency'] != 100:
-                        opacity = layer_info['transparency'] / 100.0
-                        js_call = f"setLayerOpacity('{layer_info['layer_id']}', {opacity});"
-                        self.web_view.page().runJavaScript(js_call)
+                        # Ensure the LayerSwitcher shows a friendly title, consistent with left tree
+                        try:
+                            self.web_view.page().runJavaScript(
+                                f"setLayerTitle('{layer_info['layer_id']}', {json.dumps(label_text)});"
+                            )
+                        except Exception:
+                            pass
+                        
+                        # Set visibility and transparency
+                        if not layer_info['visible']:
+                            js_call = f"toggleLayerVisibility('{layer_info['layer_id']}', false);"
+                            self.web_view.page().runJavaScript(js_call)
+                        
+                        if layer_info['transparency'] != 100:
+                            opacity = layer_info['transparency'] / 100.0
+                            js_call = f"setLayerOpacity('{layer_info['layer_id']}', {opacity});"
+                            self.web_view.page().runJavaScript(js_call)
             
             # Restore layer order
             if 'LayerOrder' in config:
@@ -3720,7 +4028,10 @@ class PreviewDialog(QDialog):
                     # Reverse the order for OpenLayers (bottom to top)
                     layer_order.reverse()
                     js_call = f"refreshLayerOrder({json.dumps(layer_order)});"
-                    self.web_view.page().runJavaScript(js_call)
+                    if self.is_webview_loading:
+                        self._js_call_queue.append(js_call)
+                    else:
+                        self.web_view.page().runJavaScript(js_call)
                 except Exception as e:
                     self.log_message(f"Error restoring layer order: {e}", level=Qgis.Warning)
             
@@ -3732,7 +4043,10 @@ class PreviewDialog(QDialog):
                     
                     if center and len(center) == 2:
                         js_call = f"setMapView([{center[0]}, {center[1]}], {zoom});"
-                        self.web_view.page().runJavaScript(js_call)
+                        if self.is_webview_loading:
+                            self._js_call_queue.append(js_call)
+                        else:
+                            self.web_view.page().runJavaScript(js_call)
                 except Exception as e:
                     self.log_message(f"Error restoring map view: {e}", level=Qgis.Warning)
             
@@ -3744,23 +4058,29 @@ class PreviewDialog(QDialog):
             self._save_control_positions()
             
             # Turn off all controls first
-            for control_name in self.control_checkboxes.keys():
+            for control_name in self.right_panel.control_checkboxes.keys():
                 js_call = f"removeControl('{control_name}');"
-                self.web_view.page().runJavaScript(js_call)
+                if self.is_webview_loading:
+                    self._js_call_queue.append(js_call)
+                else:
+                    self.web_view.page().runJavaScript(js_call)
             
             # Reload controls from ini file automatically
             self.right_panel._load_controls_state()
-            for control_name, checkbox in self.control_checkboxes.items():
+            for control_name, checkbox in self.right_panel.control_checkboxes.items():
                 if checkbox.isChecked():
-                    self._on_control_checkbox_changed(control_name, Qt.Checked)
+                    self._on_control_checkbox_changed(control_name, Qt.CheckState.Checked.value)
             
             # Trigger map resize to reposition controls with saved relative positions
-            from PyQt5.QtCore import QTimer
+            from qgis.PyQt.QtCore import QTimer
             QTimer.singleShot(100, self._trigger_map_resize_on_load)
             
             # Connect visibility checkboxes and update master checkbox state
             self.connect_visibility_checkboxes()
             self.update_select_all_checkbox_state()
+            
+            # Refresh layer order to ensure all layers render on map
+            QTimer.singleShot(500, self.refresh_layer_order)
             
             # Show success dialog
             QMessageBox.information(self, "Load Successful", f"Map state loaded from {file_path}")
@@ -3813,6 +4133,18 @@ class PreviewDialog(QDialog):
         try:
             self.log_message("🔒 Preview dialog closing...")
             
+            # Stop any ongoing loading operations
+            if hasattr(self, 'loading_thread') and self.loading_thread:
+                if self.loading_thread.isRunning():
+                    self.log_message("⏹️ Stopping layer loading operation...")
+                    self.loading_thread.cancel()
+                    self.loading_thread.quit()
+                    # Wait for thread to finish (with timeout)
+                    if not self.loading_thread.wait(2000):  # 2 second timeout
+                        self.log_message("⚠️ Loading thread did not stop gracefully", level=Qgis.Warning)
+                        self.loading_thread.terminate()
+                        self.loading_thread.wait()
+            
             # Save control states to ini file on exit
             try:
                 if hasattr(self, 'right_panel') and self.right_panel:
@@ -3821,10 +4153,17 @@ class PreviewDialog(QDialog):
             except Exception as e:
                 self.log_message(f"⚠️ Could not save control states: {e}", level=Qgis.Warning)
             
-            # Clean up resources
-            if hasattr(self, 'loading_thread') and self.loading_thread:
-                self.loading_thread.quit()
-                self.loading_thread.wait()
+            # Clean up WebEngine objects to prevent crash on second open
+            try:
+                if hasattr(self, 'channel') and self.channel is not None:
+                    self.channel.deleteLater()
+                    self.channel = None
+                if hasattr(self, 'web_view') and self.web_view is not None:
+                    self.web_view.deleteLater()
+                    self.web_view = None
+            except Exception:
+                pass
+            
             event.accept()
         except Exception as e:
             self.log_message(f"Error in closeEvent: {str(e)}", level=Qgis.Warning)

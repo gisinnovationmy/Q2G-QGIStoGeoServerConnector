@@ -1,22 +1,55 @@
 import os
 import sys
+import importlib.util
 
 # Global debug flag - set to False for production (faster startup)
 DEBUG_VERBOSE = False
 
-# Dynamic imports using ImportManager (works with any folder name)
-# Handle both package context (relative import) and script context (absolute import)
+# Ensure we load modules from the same folder as this file
+# Handle case when running via exec() where __file__ may point to non-existent path
+_CURRENT_DIR = None
 try:
-    # Try relative import first (works when run as QGIS plugin)
-    from .import_manager import dynamic_import, get_import_manager
-except (ImportError, ValueError) as e:
-    # Fallback to absolute import (works when run from console/script)
-    # Add current directory to path
-    current_dir = os.path.dirname(os.path.abspath(__file__))
-    if current_dir not in sys.path:
-        sys.path.insert(0, current_dir)
-    
-    from import_manager import dynamic_import, get_import_manager
+    _candidate = os.path.dirname(os.path.abspath(__file__))
+    # Verify the path actually exists (exec() can set __file__ to a fake path)
+    if os.path.isdir(_candidate) and os.path.exists(os.path.join(_candidate, 'main.py')):
+        _CURRENT_DIR = _candidate
+except NameError:
+    pass
+
+if _CURRENT_DIR is None:
+    # Try QGIS plugin path if available
+    try:
+        from qgis.core import QgsApplication
+        plugin_root = QgsApplication.pluginPath()
+        _candidate = os.path.join(plugin_root, "geoserverconnector")
+        if os.path.isdir(_candidate) and os.path.exists(os.path.join(_candidate, 'main.py')):
+            _CURRENT_DIR = _candidate
+    except Exception:
+        pass
+
+if _CURRENT_DIR is None:
+    # Final fallback: current working directory or home
+    _CURRENT_DIR = os.getcwd() if os.getcwd() else os.path.expanduser("~")
+
+if _CURRENT_DIR not in sys.path:
+    sys.path.insert(0, _CURRENT_DIR)
+
+def _load_local_module(module_name):
+    """Load a module from the same directory as this file."""
+    module_file = os.path.join(_CURRENT_DIR, f"{module_name}.py")
+    if not os.path.exists(module_file):
+        raise ImportError(f"Module not found: {module_file}")
+    spec = importlib.util.spec_from_file_location(module_name, module_file)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"Could not load spec for: {module_file}")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+# Load import_manager from local file
+_im = _load_local_module("import_manager")
+dynamic_import = _im.dynamic_import
+get_import_manager = _im.get_import_manager
 
 # Initialize import manager (silently)
 _manager = get_import_manager()
@@ -24,7 +57,7 @@ _manager = get_import_manager()
 # Import all required modules and classes dynamically
 get_layer_provider_info = dynamic_import("layer_format_detector", "get_layer_provider_info")
 # PreviewDialog imported lazily to avoid QtWebEngineWidgets dependency on all machines
-LayerExtentsDialog = dynamic_import("layer_extents_dialog", "LayerExtentsDialog")
+LayerExtentsDialog = dynamic_import("basic_layer_properties", "LayerExtentsDialog")
 SLDViewerDialog = dynamic_import("sld_viewer_dialog", "SLDViewerDialog")
 UploadController = dynamic_import("upload_controller", "UploadController")
 UploadProcessor = dynamic_import("upload_processor", "UploadProcessor")
@@ -63,7 +96,6 @@ GeoPackageNativeUploader = dynamic_import("geopackage_native", "GeoPackageNative
 LayerExistenceChecker = dynamic_import("layer_existence_checker", "LayerExistenceChecker")
 GeoPackageDatastoreNameExtractor = dynamic_import("get_geopackage_datastore_name", "GeoPackageDatastoreNameExtractor")
 PostGISCredentialsDialog = dynamic_import("postgis_dialog", "PostGISCredentialsDialog")
-CORSManager = dynamic_import("cors_manager", "CORSManager")
 FirstLoadDialog = dynamic_import("first_load_dialog", "FirstLoadDialog")
 should_show_first_load_dialog = dynamic_import("first_load_dialog", "should_show_first_load_dialog")
 __version__ = dynamic_import("__init__", "__version__")
@@ -79,7 +111,9 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 
 # Additional Qt/QGIS imports required by this module
-from PyQt5.QtCore import Qt, QSize, QTimer, QCoreApplication
+from qgis.PyQt.QtCore import Qt, QSize, QTimer, QSettings, QTranslator, QCoreApplication
+from qgis.PyQt.QtGui import QShortcut, QKeySequence
+from qgis.core import QgsSettings
 from qgis.PyQt.QtGui import QIcon, QPixmap
 from qgis.PyQt.QtWidgets import (
     QDialog, QVBoxLayout, QFormLayout, QLineEdit, QPushButton, QHBoxLayout, 
@@ -95,85 +129,197 @@ from qgis.core import Qgis
 class QGISGeoServerLayerLoader(QDialog):
     """Dialog to manage GeoServer data import using the Importer REST API."""
     
+    # noinspection PyMethodMayBeStatic
     def tr(self, message):
-        """
-        Get the translation for a string using Qt translation API.
-        
+        """Get the translation for a string using Qt translation API.
+
+        We implement this ourselves since we do not inherit QObject.
+
         :param message: String for translation.
         :type message: str, QString
-        
+
         :returns: Translated version of message.
         :rtype: QString
         """
+        # noinspection PyTypeChecker,PyArgumentList,PyCallByClass
         return QCoreApplication.translate('QGISGeoServerLayerLoader', message)
-    
-    def add_action(self, icon_path, text, callback, enabled_flag=True, add_to_menu=True, add_to_toolbar=True, status_tip=None, whats_this=None, parent=None):
-        """
-        Add a toolbar icon to the toolbar.
-        
+
+    def add_action(
+        self,
+        icon_path,
+        text,
+        callback,
+        enabled_flag=True,
+        add_to_menu=True,
+        add_to_toolbar=True,
+        status_tip=None,
+        whats_this=None,
+        parent=None):
+        """Add a toolbar icon to the toolbar.
+
         :param icon_path: Path to the icon for this action. Can be a resource
             path (e.g. ':/plugins/foo/bar.png') or a normal file system path.
         :type icon_path: str
-        
+
         :param text: Text that should be shown in menu items for this action.
         :type text: str
-        
+
         :param callback: Function to be called when the action is triggered.
         :type callback: function
-        
+
         :param enabled_flag: A flag indicating if the action should be enabled
             by default. Defaults to True.
         :type enabled_flag: bool
-        
+
         :param add_to_menu: Flag indicating whether the action should also
             be added to the menu. Defaults to True.
         :type add_to_menu: bool
-        
+
         :param add_to_toolbar: Flag indicating whether the action should also
             be added to the toolbar. Defaults to True.
         :type add_to_toolbar: bool
-        
+
         :param status_tip: Optional text to show in a popup when mouse pointer
             hovers over the action.
         :type status_tip: str
-        
+
         :param parent: Parent widget for the new action. Defaults None.
         :type parent: QWidget
-        
+
         :param whats_this: Optional text to show in the status bar when the
             mouse pointer hovers over the action.
-        
+
         :returns: The action that was created. Note that the action is also
             added to self.actions list.
         :rtype: QAction
         """
+
         icon = QIcon(icon_path)
         action = QAction(icon, text, parent)
         action.triggered.connect(callback)
         action.setEnabled(enabled_flag)
-        
+
         if status_tip is not None:
             action.setStatusTip(status_tip)
-        
+
         if whats_this is not None:
             action.setWhatsThis(whats_this)
-        
+
+        if add_to_toolbar:
+            # Adds plugin icon to Plugins toolbar
+            self.iface.addToolBarIcon(action)
+
         if add_to_menu:
             self.iface.addPluginToWebMenu(
                 self.menu,
                 action)
-        
+
         self.actions.append(action)
-        
+
         return action
+
+    def initGui(self):
+        """Create the menu entries and toolbar icons inside the QGIS GUI."""
+        # Initialize resources first
+        try:
+            from . import resources
+        except ImportError:
+            # If resources.py doesn't exist, try to import it directly
+            try:
+                import resources
+            except ImportError:
+                pass  # Resources might not be needed
+        
+        icon_path = os.path.join(_CURRENT_DIR, 'icon.png')
+        
+        # Create the action (add to menu only, not to default Plugins toolbar)
+        # Use toggle_panel as callback for checkable action
+        action = self.add_action(
+            icon_path,
+            text=self.tr(u'Q2G - QGIS to GeoServer Connector'),
+            callback=self.toggle_panel,
+            add_to_toolbar=False,  # Don't add to default Plugins toolbar
+            parent=self.iface.mainWindow())
+        
+        # Make the action checkable
+        action.setCheckable(True)
+        self.action = action
+            
+        # Add to 'Q2GTools' toolbar only
+        try:
+            from qgis.PyQt.QtWidgets import QToolBar
+            # Check if "Q2GTools" toolbar already exists
+            self.q2gtools_toolbar = self.iface.mainWindow().findChild(QToolBar, "Q2GTools")
+            if self.q2gtools_toolbar is None:
+                self.q2gtools_toolbar = self.iface.addToolBar("Q2GTools")
+                self.q2gtools_toolbar.setObjectName("Q2GTools")
+            
+            # Add the action to the Q2GTools toolbar
+            self.q2gtools_toolbar.addAction(action)
+        except Exception as e:
+            print(f"Error adding to Q2GTools toolbar: {e}")
+        
+        # will be set False in run()
+        self.first_start = True
+
+    def unload(self):
+        """Removes the plugin menu item and icon from QGIS GUI."""
+        # Make sure self.actions exists to prevent errors
+        if hasattr(self, 'actions'):
+            for action in self.actions:
+                # Remove from web menu
+                try:
+                    self.iface.removePluginWebMenu(
+                        self.tr(u'&Q2G - QGIS to GeoServer Connector'),
+                        action)
+                except Exception:
+                    pass
+                
+                # Remove from Q2GTools toolbar if it exists
+                if hasattr(self, 'q2gtools_toolbar') and self.q2gtools_toolbar:
+                    try:
+                        self.q2gtools_toolbar.removeAction(action)
+                    except Exception:
+                        pass
+        
+        # Clean up module references to prevent KeyError during unloading
+        try:
+            import sys
+            # Remove any references to this plugin's modules from sys.modules
+            for module_name in list(sys.modules.keys()):
+                if module_name.startswith('geoserverconnector'):
+                    try:
+                        del sys.modules[module_name]
+                    except KeyError:
+                        pass
+        except Exception:
+            pass
+
+    def toggle_panel(self, checked):
+        """Toggle the visibility of the dialog based on the checked state."""
+        if checked:
+            self.run()
+        else:
+            self.hide()
+            
+    def run(self):
+        """Run method that performs all the real work"""
+        # Show first load dialog if needed
+        self._show_first_load_dialog_if_needed()
+        
+        # Show the dialog non-modally to allow toggling
+        self.show()
+        self.raise_()
+        self.activateWindow()
+        # Removed exec_() to allow main window interaction and toggling
     
     def _show_custom_notification(self, message):
         """Show a popup notification dialog with light blue background and dark blue text."""
         print(f"DEBUG: _show_custom_notification called with message: {message}")
         try:
-            from PyQt5.QtWidgets import QDialog, QVBoxLayout, QLabel
-            from PyQt5.QtCore import QTimer, Qt
-            from PyQt5.QtGui import QFont
+            from qgis.PyQt.QtWidgets import QDialog, QVBoxLayout, QLabel
+            from qgis.PyQt.QtCore import QTimer, Qt
+            from qgis.PyQt.QtGui import QFont
             
             # Create dialog
             main_window = self.iface.mainWindow()
@@ -182,8 +328,8 @@ class QGISGeoServerLayerLoader(QDialog):
             dialog = QDialog(main_window)
             dialog.setWindowTitle("")
             dialog.setModal(False)
-            dialog.setAttribute(Qt.WA_TranslucentBackground)
-            dialog.setWindowFlags(Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.Tool)
+            dialog.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+            dialog.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowStaysOnTopHint | Qt.WindowType.Tool)
             dialog.raise_()
             dialog.activateWindow()
             
@@ -193,8 +339,8 @@ class QGISGeoServerLayerLoader(QDialog):
             
             # Create label
             label = QLabel(message)
-            label.setFont(QFont("Arial", 11, QFont.Normal))
-            label.setAlignment(Qt.AlignCenter)
+            label.setFont(QFont("Arial", 11, QFont.Weight.Normal))
+            label.setAlignment(Qt.AlignmentFlag.AlignCenter)
             label.setStyleSheet("""
                 QLabel {
                     background-color: #d4e8f7;
@@ -234,12 +380,12 @@ class QGISGeoServerLayerLoader(QDialog):
         """Setup window properties and apply modern stylesheet."""
         self.setWindowTitle("Q2G - QGIS to GeoServer")
         self.setMinimumSize(900, 650)
-        self.setWindowFlags(Qt.Window | Qt.WindowSystemMenuHint | Qt.WindowMinMaxButtonsHint | Qt.WindowCloseButtonHint)
+        self.setWindowFlags(Qt.WindowType.Window | Qt.WindowType.WindowSystemMenuHint | Qt.WindowType.WindowMinMaxButtonsHint | Qt.WindowType.WindowCloseButtonHint)
         
         # Set window icon from logo
         try:
-            plugin_dir = os.path.dirname(os.path.abspath(__file__))
-            logo_path = os.path.join(plugin_dir, 'logos', '11_spiral_blue2.svg')
+            plugin_dir = _CURRENT_DIR
+            logo_path = os.path.join(plugin_dir, 'images', 'logo.svg')
             if os.path.exists(logo_path):
                 icon = QIcon(logo_path)
                 self.setWindowIcon(icon)
@@ -294,7 +440,7 @@ class QGISGeoServerLayerLoader(QDialog):
         self.rest_url_input.setReadOnly(True)
         self.username_input = QLineEdit()
         self.password_input = QLineEdit()
-        self.password_input.setEchoMode(QLineEdit.Password)
+        self.password_input.setEchoMode(QLineEdit.EchoMode.Password)
         
         form_layout.addRow("GeoServer URL:", self.url_input)
         form_layout.addRow("Generated REST URL:", self.rest_url_input)
@@ -324,8 +470,8 @@ class QGISGeoServerLayerLoader(QDialog):
         def toggle_conn_group(checked):
             form_layout_visible = checked
             for i in range(form_layout.rowCount()):
-                label_item = form_layout.itemAt(i, QFormLayout.LabelRole)
-                field_item = form_layout.itemAt(i, QFormLayout.FieldRole)
+                label_item = form_layout.itemAt(i, QFormLayout.ItemRole.LabelRole)
+                field_item = form_layout.itemAt(i, QFormLayout.ItemRole.FieldRole)
                 if label_item and label_item.widget():
                     label_item.widget().setVisible(form_layout_visible)
                 if field_item and field_item.widget():
@@ -360,6 +506,11 @@ class QGISGeoServerLayerLoader(QDialog):
         self.documentation_btn.clicked.connect(self.show_documentation)
         others_layout.addWidget(self.documentation_btn)
         
+        self.test_paths_btn = QPushButton("Test (Debug Paths)")
+        self.test_paths_btn.clicked.connect(self.show_debug_paths_dialog)
+        self.test_paths_btn.setVisible(False)  # Hidden by default, shown in debug mode
+        others_layout.addWidget(self.test_paths_btn)
+        
         others_layout.addStretch()
         others_group.setLayout(others_layout)
         
@@ -372,30 +523,17 @@ class QGISGeoServerLayerLoader(QDialog):
     
     def _setup_workspaces_section(self, top_splitter):
         """Setup workspaces section with list and buttons."""
-        global os
         ws_group = QGroupBox("Workspaces")
         ws_layout = QVBoxLayout()
         
-        # Import droppable workspaces list
-        try:
-            from .droppable_workspaces_list import DroppableWorkspacesList
-        except ImportError:
-            # Fallback for direct execution
-            import sys
-            import os
-            sys.path.insert(0, os.path.dirname(__file__))
-            from droppable_workspaces_list import DroppableWorkspacesList
-        
-        self.workspaces_list = DroppableWorkspacesList()
+        self.workspaces_list = QListWidget()
         # Resize the workspace list box to 1.3x its default width
         self.workspaces_list.setMinimumWidth(int(self.workspaces_list.sizeHintForColumn(0) * 1.3) if self.workspaces_list.sizeHintForColumn(0) > 0 else 200)
         self.workspaces_list.itemSelectionChanged.connect(self.load_workspace_layers)
         self.workspaces_list.itemSelectionChanged.connect(self.load_stores)
         # Enable context menu on workspaces list
-        self.workspaces_list.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.workspaces_list.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.workspaces_list.customContextMenuRequested.connect(self._show_workspace_context_menu)
-        # Connect drop signal for drag and drop copy/move
-        self.workspaces_list.layers_dropped.connect(self._on_layers_dropped)
         ws_layout.addWidget(self.workspaces_list)
         
         # Create and delete workspace buttons
@@ -409,7 +547,7 @@ class QGISGeoServerLayerLoader(QDialog):
         self.delete_workspace_btn.setIcon(QIcon(os.path.join(self.plugin_dir, 'icons/bin.svg')))
         self.delete_workspace_btn.setIconSize(QSize(16, 16))
         self.delete_workspace_btn.setFixedSize(16, 16)
-        self.delete_workspace_btn.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+        self.delete_workspace_btn.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
         self.delete_workspace_btn.setToolTip("Delete Workspace")
         self.delete_workspace_btn.setStyleSheet("""
             QPushButton {
@@ -476,18 +614,6 @@ class QGISGeoServerLayerLoader(QDialog):
         self.overwrite_sld_checkbox.setChecked(True)
         top_row.addWidget(self.overwrite_sld_checkbox)
         
-        # Expand All checkbox
-        self.expand_groups_checkbox = QCheckBox("Expand All")
-        self.expand_groups_checkbox.setToolTip("Expand all layer groups")
-        self.expand_groups_checkbox.stateChanged.connect(self._on_expand_groups_toggled)
-        top_row.addWidget(self.expand_groups_checkbox)
-        
-        # Collapse All checkbox
-        self.collapse_groups_checkbox = QCheckBox("Collapse All")
-        self.collapse_groups_checkbox.setToolTip("Collapse all layer groups")
-        self.collapse_groups_checkbox.stateChanged.connect(self._on_collapse_groups_toggled)
-        top_row.addWidget(self.collapse_groups_checkbox)
-        
         top_row.addStretch()
         qgis_inner_layout.addLayout(top_row)
         
@@ -495,9 +621,9 @@ class QGISGeoServerLayerLoader(QDialog):
         self.qgis_layers_tree = QTreeWidget()
         self.qgis_layers_tree.setHeaderHidden(False)
         self.qgis_layers_tree.setColumnCount(5)
-        self.qgis_layers_tree.setHeaderLabels(["Name", "Format", "Extents", "Show SLD", "Upload SLD"])
+        self.qgis_layers_tree.setHeaderLabels(["Name", "Format", "Properties ", "Show SLD", "Upload SLD"])
         self.qgis_layers_tree.setAlternatingRowColors(True)
-        self.qgis_layers_tree.setSelectionMode(QAbstractItemView.ExtendedSelection)
+        self.qgis_layers_tree.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
         self.qgis_layers_tree.setItemsExpandable(True)
         self.qgis_layers_tree.setRootIsDecorated(True)
         
@@ -536,12 +662,14 @@ class QGISGeoServerLayerLoader(QDialog):
             pass
         self.qgis_layers_tree.clearSelection = custom_clearSelection
         
-        self.qgis_layers_tree.header().setSectionResizeMode(0, QHeaderView.Stretch)
-        self.qgis_layers_tree.header().setSectionResizeMode(1, QHeaderView.ResizeToContents)
-        self.qgis_layers_tree.header().setSectionResizeMode(2, QHeaderView.ResizeToContents)
-        self.qgis_layers_tree.header().setSectionResizeMode(3, QHeaderView.ResizeToContents)
-        self.qgis_layers_tree.header().setSectionResizeMode(4, QHeaderView.ResizeToContents)
+        self.qgis_layers_tree.header().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        self.qgis_layers_tree.header().setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
+        self.qgis_layers_tree.header().setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
+        self.qgis_layers_tree.header().setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
+        self.qgis_layers_tree.header().setSectionResizeMode(4, QHeaderView.ResizeMode.ResizeToContents)
         self.qgis_layers_tree.header().setStretchLastSection(False)
+        
+        
         qgis_inner_layout.addWidget(self.qgis_layers_tree)
         
         # SLD status label
@@ -560,6 +688,30 @@ class QGISGeoServerLayerLoader(QDialog):
         self.preview_btn = QPushButton("Preview Layers in OpenLayers")
         self.preview_btn.clicked.connect(self._show_preview_dialog)
         load_preview_layout.addWidget(self.preview_btn)
+
+        self.mini_test_btn = QPushButton("🧪 Mini WebEngine Test")
+        self.mini_test_btn.setToolTip("Open minimal WebEngine test dialog to diagnose issues")
+        self.mini_test_btn.clicked.connect(self._show_mini_test_dialog)
+        self.mini_test_btn.setVisible(False)  # Hidden by default, shown in debug mode
+        load_preview_layout.addWidget(self.mini_test_btn)
+
+        
+        self.install_webengine_btn = QPushButton("Install PyQt6-WebEngine")
+        self.install_webengine_btn.clicked.connect(self._show_webengine_installer)
+        load_preview_layout.addWidget(self.install_webengine_btn)
+
+        # Check if WebEngine is available and hide the install button if it is
+        try:
+            # Try PyQt6 first (QGIS 3.28+)
+            from PyQt6.QtWebEngineWidgets import QWebEngineView
+            self.install_webengine_btn.setVisible(False)
+        except ImportError:
+            try:
+                # Fallback to PyQt5 (QGIS 3.16-3.26)
+                from PyQt5.QtWebEngineWidgets import QWebEngineView
+                self.install_webengine_btn.setVisible(False)
+            except ImportError:
+                self.install_webengine_btn.setVisible(True)
         
         load_preview_layout.addStretch()
         
@@ -597,7 +749,7 @@ class QGISGeoServerLayerLoader(QDialog):
         
         self.load_progress_bar = QProgressBar()
         self.load_progress_bar.setVisible(False)
-        self.load_progress_bar.setAlignment(Qt.AlignCenter)
+        self.load_progress_bar.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.load_progress_bar.setStyleSheet("""
             QProgressBar {
                 border: 1px solid #0078d4;
@@ -629,8 +781,15 @@ class QGISGeoServerLayerLoader(QDialog):
         main_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.setSpacing(0)
         
+        # Debug mode label (hidden by default)
+        self.debug_mode_label = QLabel("Debug Mode On")
+        self.debug_mode_label.setStyleSheet("color: blue; font-weight: bold; padding: 4px; background-color: #e6f2ff;")
+        self.debug_mode_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.debug_mode_label.setVisible(False)
+        main_layout.addWidget(self.debug_mode_label)
+        
         # Create main vertical splitter for draggable divider between top and bottom
-        main_splitter = QSplitter(Qt.Vertical)
+        main_splitter = QSplitter(Qt.Orientation.Vertical)
         main_splitter.setChildrenCollapsible(False)
         main_splitter.setHandleWidth(8)
         
@@ -644,7 +803,7 @@ class QGISGeoServerLayerLoader(QDialog):
         self._setup_connection_section(top_layout)
         
         # Horizontal splitter with workspaces and styles
-        h_splitter = QSplitter(Qt.Horizontal)
+        h_splitter = QSplitter(Qt.Orientation.Horizontal)
         h_splitter.setChildrenCollapsible(False)
         h_splitter.setHandleWidth(8)
         
@@ -690,99 +849,6 @@ class QGISGeoServerLayerLoader(QDialog):
         # Connect tree item changed signal for group checkbox handling
         self.qgis_layers_tree.itemChanged.connect(self._on_qgis_tree_item_changed)
     
-    def initGui(self):
-        """Create the menu entries and toolbar icons inside the QGIS GUI."""
-        # Initialize resources first
-        try:
-            from . import resources
-        except ImportError:
-            # If resources.py doesn't exist, try to import it directly
-            try:
-                import resources
-            except ImportError:
-                pass  # Resources might not be needed
-        
-        icon_path = os.path.join(os.path.dirname(__file__), "icon.png")
-        
-        # Create the action and add it to the default locations (Plugins menu and toolbar)
-        # Use toggle_panel as callback for checkable action
-        action = self.add_action(
-            icon_path,
-            text=self.tr(u'Q2G - QGIS to GeoServer Connector'),
-            callback=self.toggle_panel,
-            parent=self.iface.mainWindow())
-        
-        # Make the action checkable
-        action.setCheckable(True)
-        self.action = action
-            
-        # Add to 'Q2GTools' toolbar as requested
-        try:
-            # Check if "Q2GTools" toolbar already exists
-            self.q2gtools_toolbar = self.iface.mainWindow().findChild(QToolBar, "Q2GTools")
-            if self.q2gtools_toolbar is None:
-                self.q2gtools_toolbar = self.iface.addToolBar("Q2GTools")
-                self.q2gtools_toolbar.setObjectName("Q2GTools")
-            
-            # Add the action to the Q2GTools toolbar
-            self.q2gtools_toolbar.addAction(action)
-        except Exception as e:
-            print(f"Error adding to Q2GTools toolbar: {e}")
-        
-        # will be set False in run()
-        self.first_start = True
-        
-    def unload(self):
-        """Removes the plugin menu item and icon from QGIS GUI."""
-        # Make sure self.actions exists to prevent errors
-        if hasattr(self, 'actions'):
-            for action in self.actions:
-                # Remove from web menu
-                try:
-                    self.iface.removePluginWebMenu(
-                        self.tr(u'&Q2G - QGIS to GeoServer Connector'),
-                        action)
-                except Exception:
-                    pass
-                
-                # Remove from Q2GTools toolbar if it exists
-                if hasattr(self, 'q2gtools_toolbar') and self.q2gtools_toolbar:
-                    try:
-                        self.q2gtools_toolbar.removeAction(action)
-                    except Exception:
-                        pass
-        
-        # Clean up module references to prevent KeyError during unloading
-        try:
-            import sys
-            # Remove any references to this plugin's modules from sys.modules
-            for module_name in list(sys.modules.keys()):
-                if module_name.startswith('geoserverconnector'):
-                    try:
-                        del sys.modules[module_name]
-                    except KeyError:
-                        pass
-        except Exception:
-            pass
-            
-    def toggle_panel(self, checked):
-        """Toggle the visibility of the dialog based on the checked state."""
-        if checked:
-            self.run()
-        else:
-            self.hide()
-            
-    def run(self):
-        """Run method that performs all the real work"""
-        # Show first load dialog if needed
-        self._show_first_load_dialog_if_needed()
-        
-        # Show the dialog non-modally to allow toggling
-        self.show()
-        self.raise_()
-        self.activateWindow()
-        # Removed exec_() to allow main window interaction and toggling
-    
     def __init__(self, iface):
         """
         Initialize the GeoServer Layer Loader dialog.
@@ -803,18 +869,27 @@ class QGISGeoServerLayerLoader(QDialog):
         
         # Initialize core properties
         self.iface = iface
-        self.plugin_dir = Path(__file__).resolve().parent
+        self.plugin_dir = Path(_CURRENT_DIR)
+        
+        # Declare instance attributes for toolbar
+        self.actions = []
+        self.menu = self.tr(u'&Q2G - QGIS to GeoServer Connector')
+        self.first_start = None
+
+        # Create a .pth file to handle namespace packages correctly
+        try:
+            pth_path = self.plugin_dir / 'geoserverconnector.pth'
+            with open(pth_path, 'w') as f:
+                f.write(f"import site; site.addsitedir(r'{self.plugin_dir}')")
+        except Exception as e:
+            self.log_message(f'Could not create .pth file: {e}', level=Qgis.Warning)
         self.connected_layers = set()
         self.is_updating_style = False
         self.layer_to_item_map = {}
+        self.group_to_item_map = {}
         self.layer_name_mapping = {}
-        self.group_to_item_map = {}  # Map group names to tree items
-        self.group_node_to_item_map = {}  # Map group node IDs to (item, path) for rename tracking
         self.user_initiated_checkbox_change = False
-        
-        # Initialize actions list for toolbar functionality
-        self.actions = []
-        self.menu = self.tr(u'&Q2G - QGIS to GeoServer Connector')
+        self._is_syncing_visibility = False  # Flag to prevent recursive visibility updates
         
         # Initialize managers
         self.log_tracker = UploadLogTracker()
@@ -850,19 +925,22 @@ class QGISGeoServerLayerLoader(QDialog):
         self.layer_existence_checker = LayerExistenceChecker(self)
         self.geopackage_name_extractor = GeoPackageDatastoreNameExtractor(self)
         self.geopackage_native_uploader = GeoPackageNativeUploader(self)
-        self.cors_manager = CORSManager(self)
         
         # Setup UI components
         self._setup_window_and_styling()
         self._setup_layout_and_signals()
+        
+        # Initialize debug mode (must be after UI setup)
+        self.preview_dialog = None
+        self._setup_debug_mode()
         
         # Initialize data and settings
         self.populate_qgis_layers()
         self.load_settings_on_startup()
         self._initialize_postgis_credentials()
         
-        # First load dialog is disabled to prevent automatic opening
-        # self._show_first_load_dialog_if_needed()
+        # Show first load dialog if needed
+        self._show_first_load_dialog_if_needed()
     
     def _initialize_postgis_credentials(self):
         """Initialize PostGIS credentials setup."""
@@ -873,13 +951,55 @@ class QGISGeoServerLayerLoader(QDialog):
             self.log_message(f"Error in PostGIS credentials setup: {str(e)}", level=Qgis.Warning)
             self.log_message(traceback.format_exc(), level=Qgis.Warning)
 
+    def _setup_debug_mode(self):
+        """Setup the debug mode shortcut and apply initial state."""
+        # Create keyboard shortcut for toggling debug mode
+        shortcut = QShortcut(QKeySequence("Ctrl+Alt+Shift+D"), self)
+        shortcut.activated.connect(self._toggle_debug_mode)
+        
+        # Load saved debug mode state (default to False/OFF)
+        settings = QgsSettings()
+        is_debug_mode = settings.value("geoserver_connector/debug_mode", False, type=bool)
+        
+        # Apply the initial debug mode state
+        self._apply_debug_mode(is_debug_mode)
+
+    def _toggle_debug_mode(self):
+        """Toggle the debug mode on/off."""
+        settings = QgsSettings()
+        current_state = settings.value("geoserver_connector/debug_mode", False, type=bool)
+        new_state = not current_state
+        
+        # Save the new state
+        settings.setValue("geoserver_connector/debug_mode", new_state)
+        
+        # Apply the new state
+        self._apply_debug_mode(new_state)
+        
+        # Also update the preview dialog if it's open
+        if self.preview_dialog is not None and self.preview_dialog.isVisible():
+            if hasattr(self.preview_dialog, 'set_debug_mode'):
+                self.preview_dialog.set_debug_mode(new_state)
+
+    def _apply_debug_mode(self, is_enabled):
+        """Apply the debug mode state to UI elements."""
+        # Show/hide debug mode label
+        if hasattr(self, 'debug_mode_label'):
+            self.debug_mode_label.setVisible(is_enabled)
+        
+        # Show/hide debug buttons
+        if hasattr(self, 'mini_test_btn'):
+            self.mini_test_btn.setVisible(is_enabled)
+        if hasattr(self, 'test_paths_btn'):
+            self.test_paths_btn.setVisible(is_enabled)
+
     def _show_first_load_dialog_if_needed(self):
         """Show first load dialog on plugin startup if not disabled by user."""
         try:
             plugin_dir = str(self.plugin_dir)
             if should_show_first_load_dialog(plugin_dir):
                 dialog = FirstLoadDialog(self, plugin_dir)
-                dialog.exec_()
+                dialog.exec()
         except Exception as e:
             # Silently fail - don't interrupt plugin startup
             print(f"DEBUG: Error showing first load dialog: {str(e)}")
@@ -887,50 +1007,185 @@ class QGISGeoServerLayerLoader(QDialog):
     def load_settings_on_startup(self):
         """Load GeoServer credentials and URL from an INI file on startup if it exists."""
         try:
-            # Get the plugin directory safely
-            if '__file__' in globals():
-                plugin_dir = os.path.dirname(os.path.abspath(__file__))
-            else:
-                # Fallback: use the current working directory or home directory
-                plugin_dir = os.getcwd() if os.getcwd() else os.path.expanduser("~")
+            # Use self.plugin_dir which is already set correctly in __init__
+            settings_file = os.path.join(str(self.plugin_dir), "geoserver_settings.ini")
+            print(f"DEBUG: load_settings_on_startup - Looking for settings file at: {settings_file}")
             
-            settings_file = os.path.join(plugin_dir, "geoserver_settings.ini")
-            
-            print(f"DEBUG: Looking for settings file at: {settings_file}")
+            credentials_found = False
             
             if os.path.exists(settings_file):
-                print(f"DEBUG: Settings file found, loading...")
+                print(f"DEBUG: Settings file exists, reading...")
                 config = configparser.ConfigParser()
-                config.read(settings_file)
+                read_result = config.read(settings_file)
+                print(f"DEBUG: ConfigParser read result: {read_result}")
+                print(f"DEBUG: Sections found: {config.sections()}")
                 
                 # Load settings
-                url = config.get("GeoServer", "url", fallback="")
-                username = config.get("GeoServer", "username", fallback="")
-                password = config.get("GeoServer", "password", fallback="")
+                url_val = config.get("GeoServer", "url", fallback="").strip()
+                username_val = config.get("GeoServer", "username", fallback="").strip()
+                password_val = config.get("GeoServer", "password", fallback="").strip()
+                print(f"DEBUG: Loaded values - URL: '{url_val}', Username: '{username_val}', Password: '***'")
                 
-                print(f"DEBUG: Loaded URL: {url}")
-                print(f"DEBUG: Loaded Username: {username}")
-                print(f"DEBUG: Loaded Password: {'*' * len(password) if password else '(empty)'}")
-                
-                self.url_input.setText(url)
-                self.username_input.setText(username)
-                self.password_input.setText(password)
-                
-                # Load UI preferences
-                show_log = config.get("UI", "show_log_dialog", fallback="false").lower() == "true"
-                self.show_log_dialog_checkbox.setChecked(show_log)
-                
-                # Automatically retrieve GeoServer info if we have credentials
-                if url and username:
-                    print(f"DEBUG: Auto-retrieving GeoServer info...")
+                # Check if we have valid credentials (at least URL and username)
+                if url_val and username_val:
+                    credentials_found = True
+                    self.url_input.setText(url_val)
+                    self.username_input.setText(username_val)
+                    self.password_input.setText(password_val)
+                    print(f"DEBUG: Values set to input fields")
+                    
+                    # Load UI preferences
+                    show_log = config.get("UI", "show_log_dialog", fallback="false").lower() == "true"
+                    self.show_log_dialog_checkbox.setChecked(show_log)
+                    
+                    # Automatically retrieve GeoServer info
                     self.retrieve_geoserver_info()
+                else:
+                    print(f"DEBUG: Settings file exists but credentials are empty")
             else:
-                print(f"DEBUG: Settings file not found at {settings_file}")
+                print(f"DEBUG: Settings file NOT found at: {settings_file}")
+            
+            # If no valid credentials found, prompt user to enter them
+            if not credentials_found:
+                self._show_first_time_setup_message()
+                
         except Exception as e:
-            # Log the error but don't interrupt startup
-            print(f"DEBUG: Failed to load settings on startup: {str(e)}")
+            # Silently fail - don't interrupt startup
             import traceback
+            print(f"DEBUG: Failed to load UI preferences on startup: {str(e)}")
             traceback.print_exc()
+    
+    def _show_first_time_setup_message(self):
+        """Show a message prompting the user to enter GeoServer credentials."""
+        from qgis.PyQt.QtWidgets import QMessageBox
+        msg = QMessageBox(self)
+        msg.setWindowTitle("Welcome to Q2G")
+        msg.setIcon(QMessageBox.Icon.Information)
+        msg.setText("No GeoServer credentials found.")
+        msg.setInformativeText(
+            "Please enter your GeoServer connection details:\n\n"
+            "1. Enter your GeoServer URL (e.g., http://localhost:8080/geoserver)\n"
+            "2. Enter your username and password\n"
+            "3. Click 'Save Settings to INI File' to save for future use\n\n"
+            "Your credentials will be saved locally for automatic loading next time."
+        )
+        msg.setStandardButtons(QMessageBox.StandardButton.Ok)
+        msg.exec()
+
+    def show_debug_paths_dialog(self):
+        """Show a dialog with diagnostic path information."""
+        import platform
+        import glob
+        from qgis.PyQt.QtWidgets import QDialog, QVBoxLayout, QTableWidget, QTableWidgetItem, QHeaderView, QPushButton
+
+        # --- 1. Perform all checks and gather all data first ---
+        is_webengine_importable = False
+        webengine_location = "Not found"
+        import_error_message = ""
+        try:
+            # Try PyQt6 first (QGIS 3.28+)
+            from PyQt6.QtWebEngineWidgets import QWebEngineView
+            is_webengine_importable = True
+            import PyQt6.QtWebEngineWidgets as qwe
+            if hasattr(qwe, '__file__') and qwe.__file__:
+                webengine_location = qwe.__file__
+            else:
+                webengine_location = "Loaded (location not available via __file__)"
+        except ImportError as e:
+            import_error_message = str(e)
+
+        # --- 2. Build the list of diagnostic items based on the check ---
+        diagnostics = []
+        system = platform.system()
+        qgis_exe = sys.executable
+        qgis_dir = os.path.dirname(os.path.dirname(qgis_exe))
+        plugin_folder = str(self.plugin_dir)
+
+        # Basic QGIS info
+        diagnostics.append(("QGIS Installation Folder", os.path.dirname(qgis_dir)))
+        diagnostics.append(("QGIS Executable (sys.executable)", qgis_exe))
+
+        # Python executable path
+        found_python = None
+        if system == 'Windows':
+            python_patterns = [os.path.join(qgis_dir, 'apps', 'Python3*', 'python.exe'), os.path.join(qgis_dir, 'apps', 'Python*', 'python.exe')]
+            for pattern in python_patterns:
+                matches = glob.glob(pattern)
+                if matches:
+                    found_python = matches[0]
+                    break
+        else: # macOS and Linux
+            py_name = 'python3'
+            python_patterns = ['/usr/bin/python3', os.path.join(qgis_dir, 'bin', py_name)]
+            if system == 'Darwin':
+                python_patterns.insert(0, '/Applications/QGIS.app/Contents/MacOS/bin/python3')
+            for pattern in python_patterns:
+                if os.path.exists(pattern):
+                    found_python = pattern
+                    break
+        diagnostics.append(("Python Executable Path", found_python if found_python else "NOT FOUND"))
+
+        # WebEngine Status
+        diagnostics.append(("PyQt6-WebEngine importable?", "YES - Import successful" if is_webengine_importable else f"NO - {import_error_message}"))
+        diagnostics.append(("PyQt6-WebEngine location", webengine_location))
+
+        # Summary Status
+        status_summary = ""
+        if is_webengine_importable:
+            if 'site-packages' in webengine_location and 'QGIS' not in webengine_location and 'geoserverconnector' not in webengine_location:
+                status_summary = "OK - Using existing installation from a user Python environment (e.g., AppData). No action needed."
+            elif 'geoserverconnector' in webengine_location:
+                status_summary = "OK - Using local installation in the plugin folder."
+            else:
+                status_summary = "OK - Using existing installation from QGIS directory."
+        else:
+            status_summary = "NOT FOUND - Please use the 'Install' button or follow the manual command below."
+        diagnostics.append(("Status Summary", status_summary))
+
+        # Installation commands (only if needed)
+        if not is_webengine_importable:
+            import site
+            user_site = site.getusersitepackages()
+            if found_python:
+                pip_command = f'\"{found_python}\" -m pip install --upgrade --user PyQt6-WebEngine==6.8.0 --timeout 120'
+                diagnostics.append(("Full pip install command", pip_command))
+                diagnostics.append(("Target Installation Path", user_site))
+                if system == 'Windows':
+                    manual_cmd = f'cd /d \"{os.path.dirname(found_python)}\" && python.exe -m pip install --upgrade --user PyQt6-WebEngine==6.8.0 --timeout 120'
+                else:
+                    manual_cmd = pip_command # On Linux/macOS, the command is the same
+                diagnostics.append(("Full installation command line (for terminal)", manual_cmd))
+            else:
+                diagnostics.append(("Installation Command", "Could not determine Python executable path."))
+
+        # --- 3. Create and show the dialog ---
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Debug Paths - Diagnostic Info")
+        dialog.setMinimumSize(900, 400)
+        layout = QVBoxLayout(dialog)
+        
+        # Create table
+        table = QTableWidget()
+        table.setColumnCount(2)
+        table.setHorizontalHeaderLabels(["Description", "Value"])
+        table.setRowCount(len(diagnostics))
+        table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
+        table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        
+        for row, (desc, value) in enumerate(diagnostics):
+            item_desc = QTableWidgetItem(desc)
+            item_value = QTableWidgetItem(str(value))
+            item_value.setToolTip(str(value))  # Add tooltip for the full path
+            table.setItem(row, 0, item_desc)
+            table.setItem(row, 1, item_value)
+        
+        layout.addWidget(table)
+        
+        close_btn = QPushButton("Close")
+        close_btn.clicked.connect(dialog.accept)
+        layout.addWidget(close_btn)
+        
+        dialog.exec()
 
     def get_base_url(self):
         """Get the base GeoServer URL, stripping off /rest/imports and any trailing slash."""
@@ -978,13 +1233,10 @@ class QGISGeoServerLayerLoader(QDialog):
     def save_settings_to_file(self):
         """Save GeoServer credentials and URL to an INI file."""
         # Use the plugin directory (where main.py is located) for the default save location
-        try:
-            script_dir = str(Path(__file__).resolve().parent)
-        except (NameError, KeyError):
-            # Fallback: use the directory of the import_manager module
-            import import_manager
-            script_dir = str(Path(import_manager.__file__).resolve().parent)
-        default_path = os.path.join(script_dir, "geoserver_settings.ini")
+        plugin_dir_str = str(self.plugin_dir)
+        default_path = os.path.join(plugin_dir_str, "geoserver_settings.ini")
+        print(f"DEBUG: save_settings_to_file - plugin_dir: {plugin_dir_str}")
+        print(f"DEBUG: save_settings_to_file - default_path: {default_path}")
         
         # Open file dialog to choose where to save the file
         settings_path, _ = QFileDialog.getSaveFileName(self, "Save INI File", default_path, "INI Files (*.ini)")
@@ -1049,7 +1301,7 @@ class QGISGeoServerLayerLoader(QDialog):
 
     def toggle_select_all_styles(self, state):
         """Toggle selection of all styles in the list."""
-        if state == Qt.Checked:
+        if state == Qt.CheckState.Checked.value:
             # Select all items
             for i in range(self.layer_styles_list.count()):
                 item = self.layer_styles_list.item(i)
@@ -1317,15 +1569,8 @@ class QGISGeoServerLayerLoader(QDialog):
         Filter workspace layers based on wildcard pattern.
         Updates workspace layers, datastores, and styles lists.
         """
-        try:
-            from wildcard_filter import WildcardFilter
-        except ImportError:
-            try:
-                from .wildcard_filter import WildcardFilter
-            except ImportError:
-                # Fallback: import directly if already in path
-                import wildcard_filter as wf
-                WildcardFilter = wf.WildcardFilter
+        _wf = _load_local_module("wildcard_filter")
+        WildcardFilter = _wf.WildcardFilter
         
         pattern = self.workspace_layers_filter.text().strip()
         
@@ -1682,12 +1927,12 @@ class QGISGeoServerLayerLoader(QDialog):
         layer_name = item.text(0)
         
         # Check if this is a layer (has layer data)
-        layer = item.data(0, Qt.UserRole)
-        is_group = item.data(0, Qt.UserRole + 3)  # True if marked as group
+        layer = item.data(0, Qt.ItemDataRole.UserRole)
+        is_group = item.data(0, Qt.ItemDataRole.UserRole + 3)  # True if marked as group
         
         if layer and isinstance(layer, (QgsVectorLayer, QgsRasterLayer)):
             # This is a layer item
-            if check_state == Qt.Checked:
+            if check_state == Qt.CheckState.Checked.value:
                 selected_layers.append(layer)
                 self.log_message(f"DEBUG: Added layer '{layer_name}' to selection")
         elif is_group:
@@ -2596,12 +2841,23 @@ class QGISGeoServerLayerLoader(QDialog):
     def _on_layer_visibility_changed(self, node):
         """
         Handle layer visibility changes in QGIS.
-        Updates the checkbox state in the layer list when a layer's or group's visibility changes.
+        Updates the checkbox state in the layer list when a layer's visibility changes.
+        (Simplified for flat list - no groups)
         
         Args:
             node: The layer tree node that changed visibility
         """
+        # Prevent recursive updates
+        if self._is_syncing_visibility:
+            return
+            
         try:
+            # Set flag to prevent recursion
+            self._is_syncing_visibility = True
+            
+            # Block signals to prevent recursive updates
+            self.qgis_layers_tree.blockSignals(True)
+            
             # Check if this is a layer node
             if hasattr(node, 'layer') and node.layer():
                 layer = node.layer()
@@ -2611,75 +2867,20 @@ class QGISGeoServerLayerLoader(QDialog):
                 if item:
                     # Update the checkbox state based on visibility
                     is_visible = node.itemVisibilityChecked()
-                    check_state = Qt.Checked if is_visible else Qt.Unchecked
+                    check_state = Qt.CheckState.Checked if is_visible else Qt.CheckState.Unchecked
                     item.setCheckState(0, check_state)
                     
                     # Log the change
                     status = "visible" if is_visible else "hidden"
-                    self.log_message(f"Layer '{layer.name()}' is now {status}")
-            else:
-                # This is a group node
-                if hasattr(node, 'name'):
-                    # Find the corresponding group item using the node ID mapping
-                    node_id = id(node)
-                    if hasattr(self, 'group_node_to_item_map') and node_id in self.group_node_to_item_map:
-                        group_item, group_path = self.group_node_to_item_map[node_id]
-                        
-                        # Update the checkbox state based on visibility
-                        is_visible = node.itemVisibilityChecked()
-                        check_state = Qt.Checked if is_visible else Qt.Unchecked
-                        group_item.setCheckState(0, check_state)
-                        
-                        # Log the change
-                        status = "visible" if is_visible else "hidden"
-                        self.log_message(f"Group '{node.name()}' is now {status}")
+                    self.log_message(f"✓ Layer '{layer.name()}' is now {status}")
         except Exception as e:
-            # Silently ignore errors to avoid disrupting the UI
-            pass
+            # Log errors for debugging
+            self.log_message(f"Error in visibility change handler: {e}", level=Qgis.Warning)
+        finally:
+            # Always unblock signals and clear flag
+            self.qgis_layers_tree.blockSignals(False)
+            self._is_syncing_visibility = False
 
-    def _on_expand_groups_toggled(self, state):
-        """Handle expand all groups checkbox toggle."""
-        if state == Qt.Checked:
-            try:
-                for i in range(self.qgis_layers_tree.topLevelItemCount()):
-                    item = self.qgis_layers_tree.topLevelItem(i)
-                    self._expand_item_recursive(item)
-                # Uncheck collapse when expand is checked
-                self.collapse_groups_checkbox.blockSignals(True)
-                self.collapse_groups_checkbox.setChecked(False)
-                self.collapse_groups_checkbox.blockSignals(False)
-            except Exception as e:
-                self.log_message(f"Error expanding groups: {e}", level=Qgis.Warning)
-
-    def _on_collapse_groups_toggled(self, state):
-        """Handle collapse all groups checkbox toggle."""
-        if state == Qt.Checked:
-            try:
-                for i in range(self.qgis_layers_tree.topLevelItemCount()):
-                    item = self.qgis_layers_tree.topLevelItem(i)
-                    self._collapse_item_recursive(item)
-                # Uncheck expand when collapse is checked
-                self.expand_groups_checkbox.blockSignals(True)
-                self.expand_groups_checkbox.setChecked(False)
-                self.expand_groups_checkbox.blockSignals(False)
-            except Exception as e:
-                self.log_message(f"Error collapsing groups: {e}", level=Qgis.Warning)
-
-    def _expand_item_recursive(self, item):
-        """Recursively expand an item and all its children."""
-        if item:
-            item.setExpanded(True)
-            for i in range(item.childCount()):
-                child = item.child(i)
-                self._expand_item_recursive(child)
-
-    def _collapse_item_recursive(self, item):
-        """Recursively collapse an item and all its children."""
-        if item:
-            item.setExpanded(False)
-            for i in range(item.childCount()):
-                child = item.child(i)
-                self._collapse_item_recursive(child)
 
     def _on_plugin_layer_selection_changed(self):
         """
@@ -2691,10 +2892,10 @@ class QGISGeoServerLayerLoader(QDialog):
             selected_items = self.qgis_layers_tree.selectedItems()
             for item in selected_items:
                 # Check if this is a group item (no layer ID in UserRole)
-                layer_id = item.data(0, Qt.UserRole)
+                layer_id = item.data(0, Qt.ItemDataRole.UserRole)
                 if not layer_id:
                     # This is a group - sync its visibility to QGIS
-                    is_checked = item.checkState(0) == Qt.Checked
+                    is_checked = item.checkState(0) == Qt.CheckState.Checked.value
                     self._sync_group_visibility_to_qgis(item, is_checked)
             
             # Update "Select All Layers" checkbox based on checkbox states (not selection)
@@ -2717,17 +2918,17 @@ class QGISGeoServerLayerLoader(QDialog):
             root = self.qgis_layers_tree.invisibleRootItem()
             for i in range(root.childCount()):
                 item = root.child(i)
-                if item.data(0, Qt.UserRole):  # Has layer ID, so it's a layer not a group
+                if item.data(0, Qt.ItemDataRole.UserRole):  # Has layer ID, so it's a layer not a group
                     total_selectable += 1
-                    if item.checkState(0) == Qt.Checked:
+                    if item.checkState(0) == Qt.CheckState.Checked.value:
                         checked_count += 1
                 else:
                     # It's a group, check its children
                     for j in range(item.childCount()):
                         child = item.child(j)
-                        if child.data(0, Qt.UserRole):  # Has layer ID
+                        if child.data(0, Qt.ItemDataRole.UserRole):  # Has layer ID
                             total_selectable += 1
-                            if child.checkState(0) == Qt.Checked:
+                            if child.checkState(0) == Qt.CheckState.Checked.value:
                                 checked_count += 1
             
             # Block signals to prevent recursive calls
@@ -2749,95 +2950,44 @@ class QGISGeoServerLayerLoader(QDialog):
     def _on_qgis_tree_item_changed(self, item, column):
         """
         Handle checkbox state changes in the QGIS layers tree.
-        When a group checkbox is changed, toggle all children.
-        Also syncs changes back to QGIS layer visibility.
+        Syncs layer visibility changes back to QGIS.
+        (Simplified for flat list - no groups)
         
         Args:
             item: The tree widget item that changed
             column: The column that changed
         """
-        try:
-            # Check if this is a group item (has no layer data but is marked as group)
-            is_group = item.data(0, Qt.UserRole) is None and item.data(0, Qt.UserRole + 3)
+        # Prevent recursive updates
+        if self._is_syncing_visibility:
+            return
             
-            if is_group:
-                # This is a group - toggle all children
+        try:
+            # Set flag to prevent recursion
+            self._is_syncing_visibility = True
+            
+            # This is a layer item - sync visibility to QGIS
+            layer = item.data(0, Qt.ItemDataRole.UserRole)
+            if layer and isinstance(layer, (QgsVectorLayer, QgsRasterLayer)):
                 new_state = item.checkState(0)
-                self._set_children_check_state(item, new_state)
-                self.log_message(f"Group '{item.text(0)}' checkbox changed to {new_state}")
+                is_visible = new_state == Qt.CheckState.Checked.value
                 
-                # Sync group visibility to QGIS
-                self._sync_group_visibility_to_qgis(item, new_state)
-            else:
-                # This is a layer item - sync visibility to QGIS
-                layer = item.data(0, Qt.UserRole)
-                if layer and isinstance(layer, (QgsVectorLayer, QgsRasterLayer)):
-                    new_state = item.checkState(0)
-                    is_visible = new_state == Qt.Checked
-                    
-                    # Find the layer node in QGIS and update its visibility
-                    root = QgsProject.instance().layerTreeRoot()
-                    layer_node = root.findLayer(layer.id())
-                    if layer_node:
-                        layer_node.setItemVisibilityChecked(is_visible)
-                        status = "visible" if is_visible else "hidden"
-                        self.log_message(f"Layer '{layer.name()}' set to {status} in QGIS")
+                # Find the layer node in QGIS and update its visibility
+                root = QgsProject.instance().layerTreeRoot()
+                layer_node = root.findLayer(layer.id())
+                if layer_node:
+                    layer_node.setItemVisibilityChecked(is_visible)
+                    status = "visible" if is_visible else "hidden"
+                    self.log_message(f"✓ Layer '{layer.name()}' set to {status} in QGIS")
             
             # Update "Select All Layers" checkbox when any checkbox changes
             self._update_select_all_qgis_layers_checkbox()
             
         except Exception as e:
             self.log_message(f"Error handling tree item change: {e}", level=Qgis.Warning)
+        finally:
+            # Clear flag
+            self._is_syncing_visibility = False
 
-    def _set_children_check_state(self, parent_item, state):
-        """
-        Recursively set the check state of all children.
-        
-        Args:
-            parent_item: The parent tree widget item
-            state: The check state to set (Qt.Checked or Qt.Unchecked)
-        """
-        for i in range(parent_item.childCount()):
-            child = parent_item.child(i)
-            if child:
-                # Check if this child is also a group
-                is_group = child.data(0, Qt.UserRole) is None and child.data(0, Qt.UserRole + 3)
-                
-                # Set the child's check state
-                child.setCheckState(0, state)
-                
-                # If it's a group, recursively set its children
-                if is_group:
-                    self._set_children_check_state(child, state)
-
-    def _sync_group_visibility_to_qgis(self, group_item, state):
-        """
-        Sync group visibility changes to QGIS layer tree.
-        Recursively updates visibility of all layers in the group.
-        
-        Args:
-            group_item: The group tree widget item
-            state: The check state (Qt.Checked or Qt.Unchecked)
-        """
-        is_visible = state == Qt.Checked
-        
-        # Recursively sync all children
-        for i in range(group_item.childCount()):
-            child = group_item.child(i)
-            if child:
-                # Check if this child is a layer or group
-                layer = child.data(0, Qt.UserRole)
-                is_group = child.data(0, Qt.UserRole + 3)
-                
-                if layer and isinstance(layer, (QgsVectorLayer, QgsRasterLayer)):
-                    # This is a layer - update its visibility in QGIS
-                    root = QgsProject.instance().layerTreeRoot()
-                    layer_node = root.findLayer(layer.id())
-                    if layer_node:
-                        layer_node.setItemVisibilityChecked(is_visible)
-                elif is_group:
-                    # This is a nested group - recursively sync it
-                    self._sync_group_visibility_to_qgis(child, state)
 
     def _on_individual_layer_style_changed(self):
         """Handle style changes for a layer and update its icon in the tree."""
@@ -2904,13 +3054,13 @@ class QGISGeoServerLayerLoader(QDialog):
         # Mark this as a user-initiated change
         self.user_initiated_checkbox_change = True
         self.workspace_layers_list.blockSignals(True)
-        if state == Qt.Checked:
+        if state == Qt.CheckState.Checked.value:
             self.workspace_layers_list.selectAll()
         else:
             self.workspace_layers_list.clearSelection()
         self.workspace_layers_list.blockSignals(False)
         # Reset the flag after a short delay to allow for processing
-        from PyQt5.QtCore import QTimer
+        from qgis.PyQt.QtCore import QTimer
         QTimer.singleShot(100, lambda: setattr(self, 'user_initiated_checkbox_change', False))
 
 
@@ -2918,10 +3068,10 @@ class QGISGeoServerLayerLoader(QDialog):
         """Toggle selection of all layers in the QGIS project layers tree."""
         for i in range(self.qgis_layers_tree.topLevelItemCount()):
             item = self.qgis_layers_tree.topLevelItem(i)
-            if state == Qt.Checked:
-                item.setCheckState(0, Qt.Checked)
+            if state == Qt.CheckState.Checked.value:
+                item.setCheckState(0, Qt.CheckState.Checked)
             else:
-                item.setCheckState(0, Qt.Unchecked)
+                item.setCheckState(0, Qt.CheckState.Unchecked)
 
     def delete_workspace(self):
         """
@@ -2958,7 +3108,7 @@ class QGISGeoServerLayerLoader(QDialog):
         context_menu.addAction(delete_content_action)
         
         # Show the menu at the cursor position
-        context_menu.exec_(self.workspaces_list.mapToGlobal(position))
+        context_menu.exec(self.workspaces_list.mapToGlobal(position))
     
     def _on_rename_workspace_context(self):
         """
@@ -3068,11 +3218,11 @@ class QGISGeoServerLayerLoader(QDialog):
             "This will delete all layers, styles, and datastores in this workspace.\n"
             "The workspace itself will remain empty.\n\n"
             "This action cannot be undone.",
-            QMessageBox.Yes | QMessageBox.No,
-            QMessageBox.No
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No
         )
         
-        if reply != QMessageBox.Yes:
+        if reply != QMessageBox.StandardButton.Yes:
             return
         
         # Get connection details
@@ -3320,9 +3470,9 @@ class QGISGeoServerLayerLoader(QDialog):
     def select_all_datastores(self, state):
         """Select or deselect all items in the datastores list."""
         # Set selection mode to allow multiple selections
-        self.datastores_list.setSelectionMode(QAbstractItemView.ExtendedSelection)
+        self.datastores_list.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
         
-        if state == Qt.Checked:
+        if state == Qt.CheckState.Checked.value:
             # Select all valid items
             for i in range(self.datastores_list.count()):
                 item = self.datastores_list.item(i)
@@ -3433,7 +3583,7 @@ class QGISGeoServerLayerLoader(QDialog):
         return self.datastore_deletion_manager.delete_selected_datastores()
 
     def save_ui_preferences(self):
-        """Save UI preferences and GeoServer settings to the INI file."""
+        """Save UI preferences to the INI file."""
         try:
             # Get the plugin directory safely
             if '__file__' in globals():
@@ -3450,19 +3600,12 @@ class QGISGeoServerLayerLoader(QDialog):
             if os.path.exists(settings_file):
                 config.read(settings_file)
             
-            # Ensure sections exist
+            # Ensure UI section exists
             if not config.has_section("UI"):
                 config.add_section("UI")
-            if not config.has_section("GeoServer"):
-                config.add_section("GeoServer")
             
             # Save UI preferences
             config.set("UI", "show_log_dialog", "true" if self.show_log_dialog_checkbox.isChecked() else "false")
-            
-            # Save GeoServer settings
-            config.set("GeoServer", "url", self.url_input.text().strip())
-            config.set("GeoServer", "username", self.username_input.text().strip())
-            config.set("GeoServer", "password", self.password_input.text().strip())
             
             # Write config to file
             with open(settings_file, "w") as configfile:
@@ -3493,12 +3636,6 @@ class QGISGeoServerLayerLoader(QDialog):
         # Uncheck the action when dialog is closed
         if hasattr(self, 'action'):
             self.action.setChecked(False)
-            
-    def reject(self):
-        """Handle dialog reject event (e.g. Esc key or X button) to uncheck the action."""
-        if hasattr(self, 'action'):
-            self.action.setChecked(False)
-        super().reject()
         
         # Set flag to suppress logging during shutdown
         global DEBUG_VERBOSE
@@ -3532,6 +3669,12 @@ class QGISGeoServerLayerLoader(QDialog):
         DEBUG_VERBOSE = original_debug
         
         super().closeEvent(event)
+    
+    def reject(self):
+        """Handle dialog reject event (e.g. Esc key or X button) to uncheck the action."""
+        if hasattr(self, 'action'):
+            self.action.setChecked(False)
+        super().reject()
 
 
     def load_layer_styles(self):
@@ -3579,6 +3722,84 @@ class QGISGeoServerLayerLoader(QDialog):
         # Only uncheck if this is not a user-initiated change
         if not getattr(self, 'user_initiated_checkbox_change', False) and self.select_all_layers_checkbox.isChecked():
             self.select_all_layers_checkbox.setChecked(False)
+    
+    def _highlight_related_datastore_and_style(self):
+        """Highlight the datastore and style related to the currently selected layer."""
+        try:
+            selected_items = self.workspace_layers_list.selectedItems()
+            if not selected_items or len(selected_items) != 1:
+                return
+            
+            layer_name = selected_items[0].text()
+            url = self.url_input.text().strip()
+            username = self.username_input.text().strip()
+            password = self.password_input.text().strip()
+            workspace_item = self.workspaces_list.currentItem()
+            
+            if not workspace_item:
+                return
+            
+            workspace = workspace_item.text()
+            auth = (username, password) if username and password else None
+            
+            # Get layer metadata to find datastore and style
+            _lme = _load_local_module("layer_metadata_extractor")
+            LayerMetadataExtractor = _lme.LayerMetadataExtractor
+            
+            extractor = LayerMetadataExtractor()
+            layer_metadata = extractor.get_layer_metadata(url, auth, workspace, layer_name)
+            
+            if not layer_metadata:
+                return
+            
+            layer_info = layer_metadata.get('layer', {})
+            
+            # Highlight related datastore
+            resource = layer_info.get('resource', {})
+            if 'href' in resource:
+                # Extract datastore name from resource href
+                # Format: .../workspaces/{ws}/datastores/{ds}/featuretypes/{layer}
+                # or: .../workspaces/{ws}/coveragestores/{cs}/coverages/{layer}
+                href = resource['href']
+                if '/datastores/' in href:
+                    parts = href.split('/datastores/')
+                    if len(parts) > 1:
+                        datastore_name = parts[1].split('/')[0]
+                        self._highlight_item_in_list(self.datastores_list, f"(DS) {datastore_name}")
+                elif '/coveragestores/' in href:
+                    parts = href.split('/coveragestores/')
+                    if len(parts) > 1:
+                        coveragestore_name = parts[1].split('/')[0]
+                        self._highlight_item_in_list(self.datastores_list, f"(CS) {coveragestore_name}")
+            
+            # Highlight related style
+            default_style = layer_info.get('defaultStyle', {})
+            if 'name' in default_style:
+                style_name = default_style['name']
+                # Remove workspace prefix if present
+                if ':' in style_name:
+                    style_name = style_name.split(':')[1]
+                self._highlight_item_in_list(self.layer_styles_list, style_name)
+        
+        except Exception as e:
+            # Silently fail - this is a UI enhancement, not critical
+            print(f"DEBUG: Error highlighting related items: {str(e)}")
+    
+    def _highlight_item_in_list(self, list_widget, item_text):
+        """Highlight an item in a QListWidget by text."""
+        try:
+            # Clear current selection
+            list_widget.clearSelection()
+            
+            # Find and select the matching item
+            for i in range(list_widget.count()):
+                item = list_widget.item(i)
+                if item and item.text() == item_text:
+                    item.setSelected(True)
+                    list_widget.scrollToItem(item)
+                    break
+        except Exception as e:
+            print(f"DEBUG: Error highlighting item in list: {str(e)}")
 
     def reset_all_caches(self):
         """
@@ -3622,7 +3843,7 @@ class QGISGeoServerLayerLoader(QDialog):
     def open_postgis_credentials_dialog(self):
         """Open the PostGIS credentials management dialog."""
         dialog = PostGISCredentialsDialog(self)
-        dialog.exec_()
+        dialog.exec()
 
     def prompt_for_postgis_credentials(self, host, port, database):
         """
@@ -3648,8 +3869,8 @@ class QGISGeoServerLayerLoader(QDialog):
                               f"Database: {database}\n\n"
                               f"Please enter your username and password.")
         
-        result = dialog.exec_()
-        return result == QDialog.Accepted
+        result = dialog.exec()
+        return result == QDialog.DialogCode.Accepted
 
     def show_documentation(self):
         """Show the documentation dialog."""
@@ -3658,162 +3879,18 @@ class QGISGeoServerLayerLoader(QDialog):
             import os
             import importlib.util
             
-            # Use self.plugin_dir which is already set during initialization
-            plugin_path = self.plugin_dir
-            
-            # Ensure plugin path is in sys.path
-            if plugin_path not in sys.path:
-                sys.path.insert(0, plugin_path)
-            
-            # Try relative import first (plugin context)
-            try:
-                from .documentation import DocumentationDialog
-            except (ImportError, ValueError, SystemError):
-                # Fall back to absolute import (script context)
-                try:
-                    from documentation import DocumentationDialog
-                except ImportError:
-                    # Last resort: load the module directly from file
-                    doc_file = os.path.join(plugin_path, "documentation.py")
-                    spec = importlib.util.spec_from_file_location("documentation", doc_file)
-                    if spec and spec.loader:
-                        doc_module = importlib.util.module_from_spec(spec)
-                        sys.modules["documentation"] = doc_module
-                        spec.loader.exec_module(doc_module)
-                        DocumentationDialog = doc_module.DocumentationDialog
-                    else:
-                        raise ImportError(f"Could not load documentation.py from {doc_file}")
+            # Load documentation module from local file
+            _doc = _load_local_module("documentation")
+            DocumentationDialog = _doc.DocumentationDialog
             
             dialog = DocumentationDialog(parent=self, plugin_dir=self.plugin_dir)
-            dialog.exec_()
+            dialog.exec()
         except Exception as e:
             import traceback
             error_msg = f"Could not open documentation: {e}\n\n{traceback.format_exc()}"
             self.log_message(f"❌ ERROR: {error_msg}", level=Qgis.Critical)
             QMessageBox.critical(self, "Error", error_msg)
 
-    def _on_layers_dropped(self, layer_names, target_workspace):
-        """Handle layers dropped on a workspace."""
-        try:
-            print(f"DEBUG: _on_layers_dropped called with {len(layer_names)} layers, target: {target_workspace}")
-            self.log_message(f"Layers dropped: {layer_names} -> {target_workspace}")
-            
-            # Get current workspace
-            current_workspace_item = self.workspaces_list.currentItem()
-            if not current_workspace_item:
-                self.log_message("No source workspace selected", level=Qgis.Warning)
-                print("DEBUG: No source workspace selected")
-                return
-            
-            source_workspace = current_workspace_item.text()
-            print(f"DEBUG: Source workspace: {source_workspace}")
-            
-            # Check if dropping on same workspace
-            if source_workspace == target_workspace:
-                self.log_message("Cannot copy/move to the same workspace", level=Qgis.Warning)
-                print("DEBUG: Same workspace, ignoring")
-                return
-            
-            # Filter layers: separate vectors and rasters
-            print(f"DEBUG: Filtering layers by type")
-            vector_layers = []
-            raster_layers = []
-            
-            url = self.get_base_url()
-            username = self.username_input.text().strip()
-            password = self.password_input.text().strip()
-            auth = (username, password) if username and password else None
-            
-            try:
-                from .layer_metadata_extractor import LayerMetadataExtractor
-            except ImportError:
-                import sys
-                import os
-                sys.path.insert(0, self.plugin_dir)
-                from layer_metadata_extractor import LayerMetadataExtractor
-            
-            extractor = LayerMetadataExtractor()
-            
-            for layer_name in layer_names:
-                try:
-                    layer_metadata = extractor.get_layer_metadata(url, auth, source_workspace, layer_name)
-                    if layer_metadata:
-                        layer_info = layer_metadata.get('layer', {})
-                        layer_type = layer_info.get('type', '')
-                        
-                        if layer_type == 'RASTER':
-                            raster_layers.append(layer_name)
-                            print(f"DEBUG: {layer_name} is RASTER")
-                        else:
-                            vector_layers.append(layer_name)
-                            print(f"DEBUG: {layer_name} is VECTOR")
-                    else:
-                        vector_layers.append(layer_name)
-                        print(f"DEBUG: {layer_name} type unknown, treating as vector")
-                except Exception as e:
-                    print(f"DEBUG: Error checking layer type for {layer_name}: {e}")
-                    vector_layers.append(layer_name)
-            
-            print(f"DEBUG: Vector layers: {vector_layers}, Raster layers: {raster_layers}")
-            
-            # Case 1: Only rasters - show custom notification and exit
-            if not vector_layers and raster_layers:
-                print(f"DEBUG: Only raster layers detected")
-                # Show custom light blue notification
-                self._show_custom_notification("Drag n Drop Rasters is not implemented yet")
-                return
-            
-            # Case 2: Only vectors or mixed - show dialog with only vectors
-            if not vector_layers:
-                print(f"DEBUG: No vector layers to process")
-                return
-            
-            # Show copy/move choice dialog with only vector layers
-            try:
-                from .copy_move_choice_dialog import CopyMoveChoiceDialog
-            except ImportError:
-                import sys
-                import os
-                # Use plugin_dir instead of __file__
-                sys.path.insert(0, self.plugin_dir)
-                from copy_move_choice_dialog import CopyMoveChoiceDialog
-            
-            print(f"DEBUG: Creating CopyMoveChoiceDialog with {len(vector_layers)} vector layers")
-            dialog = CopyMoveChoiceDialog(
-                parent=self,
-                layer_names=vector_layers,
-                target_workspace=target_workspace
-            )
-            
-            print("DEBUG: Showing CopyMoveChoiceDialog")
-            result = dialog.exec_()
-            print(f"DEBUG: Dialog result: {result}, QDialog.Accepted: {QDialog.Accepted}")
-            print(f"DEBUG: Dialog choice: {dialog.get_choice()}")
-            
-            if result == QDialog.Accepted:
-                operation_mode = dialog.get_choice()
-                print(f"DEBUG: Operation mode: {operation_mode}")
-                if operation_mode:
-                    # Execute operation directly with overwrite strategy (no dialog)
-                    print(f"DEBUG: Executing copy/move operation with {len(vector_layers)} vector layers")
-                    self._execute_copy_move_operation(
-                        vector_layers, source_workspace, target_workspace, operation_mode, "overwrite"
-                    )
-                    
-                    # Show notification about skipped rasters if mixed
-                    if raster_layers:
-                        print(f"DEBUG: Skipped {len(raster_layers)} raster layer(s)")
-                        self._show_custom_notification("Drag n Drop Rasters is not implemented yet")
-                else:
-                    print("DEBUG: Operation mode is None or empty")
-            else:
-                print(f"DEBUG: Dialog was not accepted (result={result})")
-        
-        except Exception as e:
-            print(f"DEBUG: Exception in _on_layers_dropped: {str(e)}")
-            import traceback
-            traceback.print_exc()
-            self.log_message(f"Error handling dropped layers: {str(e)}", level=Qgis.Warning)
     
     def _show_layer_details_dialog(self, layer_names, source_workspace):
         """Show a dialog with layer details (name, datastore, style)."""
@@ -3889,13 +3966,8 @@ class QGISGeoServerLayerLoader(QDialog):
             print(f"DEBUG: Layers: {layer_names}, Source: {source_workspace}, Target: {target_workspace}, Mode: {operation_mode}, Strategy: {conflict_strategy}")
             
             # Import handler directly
-            try:
-                from .layer_copy_move_handler import LayerCopyMoveHandler
-            except ImportError:
-                import sys
-                import os
-                sys.path.insert(0, self.plugin_dir)
-                from layer_copy_move_handler import LayerCopyMoveHandler
+            _lcmh = _load_local_module("layer_copy_move_handler")
+            LayerCopyMoveHandler = _lcmh.LayerCopyMoveHandler
             
             print("DEBUG: Creating LayerCopyMoveHandler")
             handler = LayerCopyMoveHandler()
@@ -3960,14 +4032,8 @@ class QGISGeoServerLayerLoader(QDialog):
             print(f"DEBUG: _open_copy_move_dialog_with_layers called")
             print(f"DEBUG: Layers: {layer_names}, Source: {source_workspace}, Target: {target_workspace}, Mode: {operation_mode}")
             
-            try:
-                from .copy_move_layers_dialog import CopyMoveLayersDialog
-            except ImportError:
-                import sys
-                import os
-                # Use plugin_dir instead of __file__
-                sys.path.insert(0, self.plugin_dir)
-                from copy_move_layers_dialog import CopyMoveLayersDialog
+            _cmld = _load_local_module("copy_move_layers_dialog")
+            CopyMoveLayersDialog = _cmld.CopyMoveLayersDialog
             
             print("DEBUG: Creating CopyMoveLayersDialog")
             dialog = CopyMoveLayersDialog(
@@ -3985,7 +4051,7 @@ class QGISGeoServerLayerLoader(QDialog):
             
             # Show dialog
             print("DEBUG: Showing CopyMoveLayersDialog")
-            dialog.exec_()
+            dialog.exec()
             print("DEBUG: CopyMoveLayersDialog closed")
         
         except Exception as e:
@@ -4014,7 +4080,7 @@ class QGISGeoServerLayerLoader(QDialog):
             copy_action = menu.addAction("Copy Layer(s) to Another Workspace")
             move_action = menu.addAction("Move Layer(s) to Another Workspace")
             
-            action = menu.exec_(self.workspace_layers_list.mapToGlobal(position))
+            action = menu.exec(self.workspace_layers_list.mapToGlobal(position))
             
             if action == copy_action:
                 self._open_copy_move_dialog(selected_items, "copy")
@@ -4037,14 +4103,8 @@ class QGISGeoServerLayerLoader(QDialog):
         current_workspace = current_workspace_item.text()
         
         # Import dialog
-        try:
-            from .copy_move_layers_dialog import CopyMoveLayersDialog
-        except ImportError:
-            import sys
-            import os
-            # Use plugin_dir instead of __file__
-            sys.path.insert(0, self.plugin_dir)
-            from copy_move_layers_dialog import CopyMoveLayersDialog
+        _cmld = _load_local_module("copy_move_layers_dialog")
+        CopyMoveLayersDialog = _cmld.CopyMoveLayersDialog
         
         # Create and show dialog
         dialog = CopyMoveLayersDialog(
@@ -4060,7 +4120,7 @@ class QGISGeoServerLayerLoader(QDialog):
         dialog.operation_completed.connect(self._on_copy_move_completed)
         
         # Show dialog
-        dialog.exec_()
+        dialog.exec()
     
     def _on_copy_move_completed(self, target_workspace):
         """Called when copy/move operation completes successfully."""
@@ -4130,6 +4190,12 @@ class QGISGeoServerLayerLoader(QDialog):
                 self.log_message("📺 Dialog is now displayed (non-blocking)")
                 # Store reference to prevent garbage collection
                 self.preview_dialog = preview_dialog
+                
+                # Apply current debug mode state to the preview dialog
+                settings = QgsSettings()
+                is_debug_mode = settings.value("geoserver_connector/debug_mode", False, type=bool)
+                if hasattr(self.preview_dialog, 'set_debug_mode'):
+                    self.preview_dialog.set_debug_mode(is_debug_mode)
             else:
                 self.log_message("❌ open_openlayers_preview() returned False/None", level=Qgis.Warning)
             
@@ -4139,47 +4205,9 @@ class QGISGeoServerLayerLoader(QDialog):
             traceback.print_exc()
             
             if 'QtWebEngineWidgets' in str(e) or 'ModuleNotFoundError' in str(type(e).__name__):
-                # Create a custom dialog with copy button
-                dialog = QMessageBox(self)
-                dialog.setWindowTitle("Preview Not Available - Easy Fix")
-                dialog.setIcon(QMessageBox.Warning)
-                
-                error_msg = (
-                    "Preview dialog is not available on this system.\n\n"
-                    "Reason: PyQt5.QtWebEngineWidgets is not installed.\n\n"
-                    "═══════════════════════════════════════════════════════════\n"
-                    "HOW TO INSTALL (Easy Steps):\n"
-                    "═══════════════════════════════════════════════════════════\n\n"
-                    "1. Open QGIS Python Console (Plugins → Python Console)\n\n"
-                    "2. Copy the command below and paste it into the console:\n"
-                    "   import subprocess, sys\n"
-                    "   subprocess.check_call([sys.executable, '-m', 'pip', 'install', 'PyQtWebEngine'])\n\n"
-                    "3. Press Enter and wait for installation to complete\n\n"
-                    "4. Restart QGIS\n\n"
-                    "5. Try Preview again - it should work now!\n\n"
-                    "═══════════════════════════════════════════════════════════\n\n"
-                    "Note: The plugin will still work for uploading layers to GeoServer.\n"
-                    "You can continue using other features."
-                )
-                
-                dialog.setText(error_msg)
-                
-                # Add copy button
-                copy_btn = dialog.addButton("Copy Installation Command", QMessageBox.ActionRole)
-                ok_btn = dialog.addButton("OK", QMessageBox.AcceptRole)
-                
-                # Handle copy button click
-                def copy_command():
-                    from PyQt5.QtWidgets import QApplication
-                    clipboard = QApplication.clipboard()
-                    command = "import subprocess, sys\nsubprocess.check_call([sys.executable, '-m', 'pip', 'install', 'PyQtWebEngine'])"
-                    clipboard.setText(command)
-                    QMessageBox.information(self, "Copied", "Installation command copied to clipboard!\n\nNow paste it in the QGIS Python Console.")
-                
-                copy_btn.clicked.connect(copy_command)
-                
-                self.log_message(f"⚠️ Preview not available: QtWebEngineWidgets missing", level=Qgis.Warning)
-                dialog.exec_()
+                # Show the WebEngine installer dialog
+                self.log_message(f"⚠️ Preview not available: QtWebEngineWidgets missing - showing installer", level=Qgis.Warning)
+                self._show_webengine_installer()
             else:
                 error_msg = f"Could not open the preview dialog: {e}"
                 self.log_message(f"❌ ERROR: {error_msg}", level=Qgis.Critical)
@@ -4190,6 +4218,32 @@ class QGISGeoServerLayerLoader(QDialog):
             self.log_message(f"❌ ERROR: {error_msg}", level=Qgis.Critical)
             QMessageBox.critical(self, "Error", error_msg)
 
+    def _show_webengine_installer(self):
+        """Open the PyQt6-WebEngine installer dialog manually."""
+        try:
+            InstallerDialog = dynamic_import("pyqtwebengine_installer", "PyQtWebEngineInstallerDialog")
+            dialog = InstallerDialog(self)
+            dialog.exec()
+        except Exception as e:
+            error_msg = f"Could not open the installer dialog: {e}"
+            self.log_message(f"❌ ERROR: {error_msg}", level=Qgis.Critical)
+            QMessageBox.critical(self, "Installer Error", error_msg)
+
+    def _show_mini_test_dialog(self):
+        """Open the minimal WebEngine test dialog for diagnostics."""
+        try:
+            self.log_message("🧪 Opening Mini WebEngine Test dialog...")
+            open_mini_dialog = dynamic_import("mini", "open_mini_dialog")
+            self.mini_dialog = open_mini_dialog(self)
+            self.log_message("✅ Mini WebEngine Test dialog opened")
+        except Exception as e:
+            import traceback
+            error_msg = f"Could not open mini test dialog: {e}"
+            self.log_message(f"❌ ERROR: {error_msg}", level=Qgis.Critical)
+            traceback.print_exc()
+            QMessageBox.critical(self, "Mini Test Error", error_msg)
+
+    
     def update_progress_bar(self, value):
         """
         Update progress bar with dynamic text color based on fill percentage.
@@ -4212,8 +4266,3 @@ class QGISGeoServerLayerLoader(QDialog):
         # Add to upload log tracker with level for color coding
         if hasattr(self, 'log_tracker'):
             self.log_tracker.add_message(str(message), level)
-
-
-# Create a plugin instance that can be used by QGIS
-def classFactory(iface):
-    return QGISGeoServerLayerLoader(iface)

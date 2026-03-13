@@ -1,14 +1,14 @@
-from PyQt5.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QTextEdit, QPushButton, QFileDialog
-from PyQt5.QtCore import Qt
+from qgis.PyQt.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QTextEdit, QPushButton, QFileDialog
+from qgis.PyQt.QtCore import Qt
 
 class SLDViewerDialog(QDialog):
     def __init__(self, sld_content, title, parent=None, save_callback=None):
         super().__init__(parent)
         self.setWindowTitle(title)
         self.setMinimumSize(600, 400)
-        self.setWindowModality(Qt.NonModal)
-        self.setAttribute(Qt.WA_DeleteOnClose, True)
-        self.setWindowFlags(Qt.Window | Qt.WindowSystemMenuHint | Qt.WindowMinMaxButtonsHint | Qt.WindowCloseButtonHint)
+        self.setWindowModality(Qt.WindowModality.NonModal)
+        self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose, True)
+        self.setWindowFlags(Qt.WindowType.Window | Qt.WindowType.WindowSystemMenuHint | Qt.WindowType.WindowMinMaxButtonsHint | Qt.WindowType.WindowCloseButtonHint)
 
         layout = QVBoxLayout()
         self.sld_text = QTextEdit()

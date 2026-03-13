@@ -50,7 +50,7 @@ class OverwriteExistingLayerDialog:
         checkbox = self._add_batch_checkbox(msg_box)
         
         # Show dialog and get user response
-        msg_box.exec_()
+        msg_box.exec()
         clicked_button = msg_box.clickedButton()
         apply_to_all = checkbox.isChecked()
         

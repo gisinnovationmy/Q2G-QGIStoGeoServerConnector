@@ -97,11 +97,11 @@ class LayerDeletionManager:
             self.main, 
             'Confirm Deletion',
             f"Are you sure you want to delete {len(layer_names)} layers and their stores from '{workspace_name}'?\n\n" + "\n".join(layer_names),
-            QMessageBox.Yes | QMessageBox.No, 
-            QMessageBox.No
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, 
+            QMessageBox.StandardButton.No
         )
         
-        return reply == QMessageBox.Yes
+        return reply == QMessageBox.StandardButton.Yes
     
     def _get_connection_details(self):
         """

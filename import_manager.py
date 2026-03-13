@@ -2,11 +2,12 @@
 Dynamic Import Manager
 Manages imports regardless of package folder name.
 Allows the plugin to work with any folder name (geoserverconnector, GeoVirtuallis, etc.)
+Ensures all imports come from the same folder as this file.
 """
 
 import os
 import sys
-from importlib import import_module
+import importlib.util
 from pathlib import Path
 
 # Debug flag - set to False for production (faster startup)
@@ -19,6 +20,7 @@ class ImportManager:
     
     This class detects the actual package name at runtime and provides
     a unified interface for importing modules and items from the package.
+    All imports are guaranteed to come from the same folder as this file.
     
     Usage:
         manager = ImportManager()
@@ -29,32 +31,91 @@ class ImportManager:
     def __init__(self):
         """Initialize the import manager and detect package name."""
         try:
-            # Get the directory of this file
+            # Get the directory of this file - this is the ONLY source for imports
             current_file = os.path.abspath(__file__)
-            current_dir = os.path.dirname(current_file)
+            self.current_dir = os.path.dirname(current_file)
             
             # Get the package name from the folder name
-            self.package_name = os.path.basename(current_dir)
+            self.package_name = os.path.basename(self.current_dir)
             
             # Get parent directory (where the package folder is)
-            parent_dir = os.path.dirname(current_dir)
+            self.parent_dir = os.path.dirname(self.current_dir)
             
-            # Ensure parent directory is in sys.path (for absolute imports)
-            if parent_dir not in sys.path:
-                sys.path.insert(0, parent_dir)
+            # Remove any conflicting paths from sys.path that might have the same package name
+            self._clean_conflicting_paths()
             
-            # Also ensure current directory is in sys.path (for direct module imports)
-            if current_dir not in sys.path:
-                sys.path.insert(0, current_dir)
+            # Ensure our directories are at the FRONT of sys.path
+            if self.current_dir in sys.path:
+                sys.path.remove(self.current_dir)
+            sys.path.insert(0, self.current_dir)
+            
+            if self.parent_dir in sys.path:
+                sys.path.remove(self.parent_dir)
+            sys.path.insert(0, self.parent_dir)
+            
+            # Store loaded modules to avoid reloading
+            self._loaded_modules = {}
             
             if DEBUG_IMPORTS:
                 print(f"✓ ImportManager initialized: package_name = '{self.package_name}'")
-                print(f"  Parent dir: {parent_dir}")
-                print(f"  Current dir: {current_dir}")
+                print(f"  Parent dir: {self.parent_dir}")
+                print(f"  Current dir: {self.current_dir}")
             
         except Exception as e:
             print(f"✗ ImportManager initialization error: {e}")
             raise
+    
+    def _clean_conflicting_paths(self):
+        """Remove paths from sys.path that contain a conflicting package with the same name."""
+        paths_to_remove = []
+        for path in sys.path:
+            if path == self.current_dir or path == self.parent_dir:
+                continue
+            # Check if this path contains a package with our name
+            potential_conflict = os.path.join(path, self.package_name)
+            if os.path.isdir(potential_conflict) and potential_conflict != self.current_dir:
+                paths_to_remove.append(path)
+                if DEBUG_IMPORTS:
+                    print(f"  Removing conflicting path: {path}")
+        
+        for path in paths_to_remove:
+            sys.path.remove(path)
+    
+    def _load_module_from_file(self, module_name):
+        """
+        Load a module directly from a file in the current directory.
+        This bypasses Python's normal import system to ensure we load from the correct location.
+        """
+        module_file = os.path.join(self.current_dir, f"{module_name}.py")
+        
+        if not os.path.exists(module_file):
+            raise ImportError(f"Module file not found: {module_file}")
+        
+        # Create a unique module name to avoid conflicts
+        unique_module_name = f"{self.package_name}.{module_name}"
+        
+        # Check if already loaded
+        if unique_module_name in self._loaded_modules:
+            return self._loaded_modules[unique_module_name]
+        
+        # Load the module from the specific file
+        spec = importlib.util.spec_from_file_location(unique_module_name, module_file)
+        if spec is None or spec.loader is None:
+            raise ImportError(f"Could not load spec for module: {module_file}")
+        
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[unique_module_name] = module
+        
+        try:
+            spec.loader.exec_module(module)
+        except Exception as e:
+            # Clean up on failure
+            if unique_module_name in sys.modules:
+                del sys.modules[unique_module_name]
+            raise ImportError(f"Error loading module {module_name}: {e}")
+        
+        self._loaded_modules[unique_module_name] = module
+        return module
     
     def import_from(self, module_name, *items):
         """
@@ -80,17 +141,14 @@ class ImportManager:
             detect_format = items["detect_format"]
         """
         try:
-            # Build full module path
-            full_module_path = f"{self.package_name}.{module_name}"
-            
-            # Import the module
-            module = import_module(full_module_path)
+            # Load module directly from file to ensure correct location
+            module = self._load_module_from_file(module_name)
             
             # Get requested items from module
             result = {}
             for item in items:
                 if not hasattr(module, item):
-                    raise AttributeError(f"Module '{full_module_path}' has no attribute '{item}'")
+                    raise AttributeError(f"Module '{self.package_name}.{module_name}' has no attribute '{item}'")
                 result[item] = getattr(module, item)
             
             # Return single item or dict based on number of items
@@ -124,12 +182,14 @@ class ImportManager:
             dialog = preview_module.PreviewDialog()
         """
         try:
-            full_module_path = f"{self.package_name}.{module_name}"
-            module = import_module(full_module_path)
-            return module
+            return self._load_module_from_file(module_name)
         except ImportError as e:
-            print(f"✗ ImportManager: Failed to import module '{full_module_path}': {e}")
+            print(f"✗ ImportManager: Failed to import module '{self.package_name}.{module_name}': {e}")
             raise
+    
+    def get_plugin_dir(self):
+        """Return the plugin directory path."""
+        return self.current_dir
 
 
 # Initialize global import manager instance

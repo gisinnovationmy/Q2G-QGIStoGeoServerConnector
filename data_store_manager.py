@@ -81,22 +81,30 @@ class DataStoreManager:
             Tuple of (success: bool, datastore_name: str, message: str)
         """
         try:
+            print(f"DEBUG DataStoreManager: create_data_store_reference called")
+            print(f"DEBUG: target_workspace={target_workspace}")
+            print(f"DEBUG: datastore_config keys={datastore_config.keys() if datastore_config else 'None'}")
+            
             if not datastore_config or 'dataStore' not in datastore_config:
+                print(f"DEBUG: Invalid datastore config!")
                 return False, None, "Invalid data store config"
             
             ds_info = datastore_config['dataStore']
             datastore_name = ds_info.get('name')
+            print(f"DEBUG: datastore_name={datastore_name}, type={ds_info.get('type')}")
             
             if not datastore_name:
                 return False, None, "Data store name not found"
             
             # Check if data store already exists in target workspace
             if self.data_store_exists(url, auth, target_workspace, datastore_name):
+                print(f"DEBUG: Datastore already exists in target workspace")
                 self.log_message(f"Data store '{datastore_name}' already exists in workspace '{target_workspace}'")
                 return True, datastore_name, f"Using existing data store '{datastore_name}'"
             
             # Create new data store in target workspace
             create_url = f"{url}/rest/workspaces/{target_workspace}/datastores"
+            print(f"DEBUG: Creating datastore at {create_url}")
             
             # Prepare payload (remove id and workspace references)
             payload = {
@@ -107,6 +115,7 @@ class DataStoreManager:
                     'connectionParameters': ds_info.get('connectionParameters', {})
                 }
             }
+            print(f"DEBUG: Payload type={payload['dataStore']['type']}")
             
             headers = {'Content-Type': 'application/json'}
             response = requests.post(
@@ -117,15 +126,19 @@ class DataStoreManager:
                 timeout=self.timeout
             )
             
+            print(f"DEBUG: Datastore creation response: {response.status_code}")
             if response.status_code in [200, 201]:
+                print(f"DEBUG: Datastore created successfully!")
                 self.log_message(f"✓ Data store '{datastore_name}' created in workspace '{target_workspace}'")
                 return True, datastore_name, f"Created data store '{datastore_name}'"
             else:
+                print(f"DEBUG: Datastore creation failed: {response.text[:200] if response.text else 'empty'}")
                 error_msg = f"Failed to create data store: {response.status_code} - {response.text}"
                 self.log_message(error_msg, level=Qgis.Warning)
                 return False, None, error_msg
         
         except Exception as e:
+            print(f"DEBUG: Exception in create_data_store_reference: {str(e)}")
             error_msg = f"Error creating data store reference: {str(e)}"
             self.log_message(error_msg, level=Qgis.Warning)
             return False, None, error_msg

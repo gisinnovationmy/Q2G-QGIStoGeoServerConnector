@@ -86,11 +86,11 @@ class StyleDeletionManager:
             self.main, 
             'Confirm Delete', 
             confirm_msg,
-            QMessageBox.Yes | QMessageBox.No, 
-            QMessageBox.No
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, 
+            QMessageBox.StandardButton.No
         )
 
-        return reply == QMessageBox.Yes
+        return reply == QMessageBox.StandardButton.Yes
     
     def _get_connection_details(self):
         """

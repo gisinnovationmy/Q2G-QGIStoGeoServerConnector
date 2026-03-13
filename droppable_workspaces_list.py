@@ -9,14 +9,14 @@ from qgis.PyQt.QtGui import QDropEvent, QColor
 
 
 class DroppableWorkspacesList(QListWidget):
-    """Custom QListWidget that does not accept dropped layers."""
+    """Custom QListWidget that accepts dropped layers."""
     
     # Signal emitted when layers are dropped on a workspace
     layers_dropped = pyqtSignal(list, str)  # layer_names, target_workspace
     
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setAcceptDrops(False)
+        self.setAcceptDrops(True)
         self.drop_target_item = None
         self.previous_target_item = None
         self.auto_scroll_timer = QTimer()
@@ -30,8 +30,14 @@ class DroppableWorkspacesList(QListWidget):
         """)
     
     def dragEnterEvent(self, event):
-        """Reject all drag enter events."""
-        event.ignore()
+        """Accept drag enter events."""
+        try:
+            if event.mimeData().hasFormat('application/x-geoserver-layers'):
+                event.acceptProposedAction()
+            elif event.mimeData().hasText():
+                event.acceptProposedAction()
+        except Exception as e:
+            print(f"Error in dragEnterEvent: {str(e)}")
     
     def dragLeaveEvent(self, event):
         """Reset visual feedback when drag leaves."""
@@ -50,8 +56,32 @@ class DroppableWorkspacesList(QListWidget):
             print(f"Error in dragLeaveEvent: {str(e)}")
     
     def dragMoveEvent(self, event):
-        """Reject all drag move events."""
-        event.ignore()
+        """Accept drag move events, highlight target item, and auto-scroll."""
+        try:
+            if event.mimeData().hasFormat('application/x-geoserver-layers'):
+                event.acceptProposedAction()
+                
+                # Get item at cursor position
+                item = self.itemAt(event.pos())
+                
+                # Update highlight only if item changed
+                if item and item != self.drop_target_item:
+                    # Reset previous item
+                    if self.previous_target_item:
+                        self.previous_target_item.setBackground(QColor(255, 255, 255))
+                    
+                    # Highlight new item
+                    item.setBackground(QColor(173, 216, 230, 150))  # Light blue
+                    self.drop_target_item = item
+                    self.previous_target_item = item
+                
+                # Auto-scroll logic
+                self._handle_auto_scroll(event.pos())
+            
+            elif event.mimeData().hasText():
+                event.acceptProposedAction()
+        except Exception as e:
+            print(f"Error in dragMoveEvent: {str(e)}")
     
     def _handle_auto_scroll(self, pos):
         """Handle auto-scroll when dragging near edges."""

@@ -1,5 +1,5 @@
-from PyQt5.QtWidgets import QTreeWidget, QCheckBox, QSlider
-from PyQt5.QtCore import Qt, pyqtSignal
+from qgis.PyQt.QtWidgets import QTreeWidget, QCheckBox, QSlider
+from qgis.PyQt.QtCore import Qt, pyqtSignal
 
 
 class DraggableTreeWidget(QTreeWidget):
@@ -11,8 +11,8 @@ class DraggableTreeWidget(QTreeWidget):
         super().__init__(parent)
         self.setDragEnabled(True)
         self.setAcceptDrops(True)
-        self.setDragDropMode(QTreeWidget.InternalMove)
-        self.setDefaultDropAction(Qt.MoveAction)
+        self.setDragDropMode(QTreeWidget.DragDropMode.InternalMove)
+        self.setDefaultDropAction(Qt.DropAction.MoveAction)
         # Only allow dropping between items, not on items (prevents group creation)
         self.setDropIndicatorShown(True)
         # Disable auto-scroll and selection during drag to prevent unwanted item selection
@@ -52,7 +52,7 @@ class DraggableTreeWidget(QTreeWidget):
         drop_indicator = self.dropIndicatorPosition()
         
         # Only allow drops between items (AboveItem or BelowItem), not on items
-        if drop_indicator == QTreeWidget.OnItem:
+        if drop_indicator == QTreeWidget.DropIndicatorPosition.OnItem:
             event.ignore()
             return
         
@@ -64,7 +64,7 @@ class DraggableTreeWidget(QTreeWidget):
         
         # Store widget states before drop
         for item in dragged_items:
-            layer_id = item.data(0, Qt.UserRole)
+            layer_id = item.data(0, Qt.ItemDataRole.UserRole)
             if layer_id:
                 # Get current widgets
                 checkbox = self.itemWidget(item, 0)
@@ -96,19 +96,19 @@ class DraggableTreeWidget(QTreeWidget):
             # Find the item with this layer_id
             for i in range(self.topLevelItemCount()):
                 item = self.topLevelItem(i)
-                if item and item.data(0, Qt.UserRole) == layer_id:
+                if item and item.data(0, Qt.ItemDataRole.UserRole) == layer_id:
                     # Recreate checkbox
                     checkbox = QCheckBox()
                     checkbox.setChecked(state['checked'])
                     # Connect to dialog's handler if available
                     if self._dialog and hasattr(self._dialog, 'toggle_layer_visibility'):
                         checkbox.stateChanged.connect(
-                            lambda st, l_id=layer_id: self._dialog.toggle_layer_visibility(l_id, st == Qt.Checked)
+                            lambda st, l_id=layer_id: self._dialog.toggle_layer_visibility(l_id, st == Qt.CheckState.Checked.value)
                         )
                     self.setItemWidget(item, 0, checkbox)
                     
                     # Recreate slider
-                    slider = QSlider(Qt.Horizontal)
+                    slider = QSlider(Qt.Orientation.Horizontal)
                     slider.setRange(0, 100)
                     slider.setValue(state['transparency'])
                     slider.setToolTip("Adjust layer transparency")

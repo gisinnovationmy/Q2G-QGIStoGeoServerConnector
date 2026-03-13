@@ -1,97 +1,96 @@
 """
-PyQtWebEngine installer dialog for handling missing PyQt5.QtWebEngineWidgets.
+PyQtWebEngine installer dialog for handling missing QtWebEngineWidgets.
 Provides one-click installation with real-time feedback.
+Supports both PyQt5 (QGIS 3.16-3.26) and PyQt6 (QGIS 3.28+).
 """
 
 import subprocess
 import sys
 import os
 import socket
-from PyQt5.QtWidgets import (
+from qgis.PyQt.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, 
-    QTextEdit, QMessageBox
+    QTextEdit, QMessageBox, QCheckBox
 )
-from PyQt5.QtCore import Qt, QThread, pyqtSignal
-from PyQt5.QtGui import QFont, QIcon
+from qgis.PyQt.QtCore import Qt, QThread, pyqtSignal
+from qgis.core import QgsSettings
+from qgis.PyQt.QtGui import QFont, QIcon
+
+
+def detect_qt_version():
+    """Detect which Qt version QGIS is using (Qt5 or Qt6)."""
+    try:
+        from qgis.PyQt.QtCore import QT_VERSION_STR
+        qt_major = int(QT_VERSION_STR.split('.')[0])
+        return qt_major
+    except:
+        # Default to Qt6 for newer QGIS
+        return 6
+
+
+def get_webengine_package_name():
+    """Get the correct WebEngine package name based on Qt version."""
+    qt_version = detect_qt_version()
+    if qt_version >= 6:
+        return "PyQt6-WebEngine"
+    else:
+        return "PyQt5-WebEngine"
 
 
 def check_internet_connection():
     """Check if internet connection is available"""
-    sock = None
     try:
         # Try to connect to Google DNS
-        sock = socket.create_connection(("8.8.8.8", 53), timeout=3)
+        socket.create_connection(("8.8.8.8", 53), timeout=3)
         return True
     except (socket.timeout, socket.error):
-        return False
-    finally:
-        if sock is not None:
-            sock.close()
-
-
-def check_pip_installed(python_exe):
-    """Check if pip is installed for the given Python executable"""
-    try:
-        result = subprocess.run(
-            [python_exe, "-m", "pip", "--version"],
-            capture_output=True,
-            text=True,
-            timeout=30
-        )
-        return result.returncode == 0
-    except (subprocess.TimeoutExpired, Exception):
-        return False
-
-
-def install_pip(python_exe, progress_callback=None):
-    """Attempt to install pip using ensurepip"""
-    try:
-        if progress_callback:
-            progress_callback("🔧 Attempting to install pip using ensurepip...\n")
-        
-        result = subprocess.run(
-            [python_exe, "-m", "ensurepip", "--upgrade"],
-            capture_output=True,
-            text=True,
-            timeout=120
-        )
-        
-        if result.returncode == 0:
-            if progress_callback:
-                progress_callback("✅ pip installed successfully!\n")
-            return True
-        else:
-            if progress_callback:
-                progress_callback(f"❌ Failed to install pip: {result.stderr}\n")
-            return False
-    except subprocess.TimeoutExpired:
-        if progress_callback:
-            progress_callback("❌ pip installation timed out\n")
-        return False
-    except Exception as e:
-        if progress_callback:
-            progress_callback(f"❌ Error installing pip: {str(e)}\n")
         return False
 
 
 class InstallThread(QThread):
-    """Background thread for installing PyQtWebEngine"""
+    """Background thread for installing PyQt WebEngine (Qt5 or Qt6)"""
     progress = pyqtSignal(str)
     finished = pyqtSignal(bool, str)
-    pip_not_found = pyqtSignal(str)  # Signal to ask user about pip installation
     
-    def __init__(self, install_pip_if_missing=False):
+    def __init__(self, target_dir=None):
         super().__init__()
-        self.install_pip_if_missing = install_pip_if_missing
-        self.python_exe = None
+        self.target_dir = target_dir
+        self.qt_version = detect_qt_version()
+        self.package_name = get_webengine_package_name()
     
     def run(self):
         try:
-            # Check internet connection first
+            # First, check if PyQtWebEngine is already installed
+            self.progress.emit(f"🔍 Detected Qt{self.qt_version} - checking for {self.package_name}...\n")
+            
+            # Check for existing installation based on Qt version
+            webengine_found = False
+            if self.qt_version >= 6:
+                try:
+                    from PyQt6 import QtWebEngineWidgets
+                    webengine_found = True
+                except ImportError:
+                    pass
+            else:
+                try:
+                    from PyQt5 import QtWebEngineWidgets
+                    webengine_found = True
+                except ImportError:
+                    pass
+            
+            if webengine_found:
+                self.progress.emit(f"✅ {self.package_name} is already installed.\n")
+                self.progress.emit("\n🔄 Please restart QGIS to use the Preview feature if it's not working.\n")
+                self.finished.emit(True, "Already installed")
+                return
+            else:
+                self.progress.emit(f"⚠️  {self.package_name} not found. Proceeding with installation...\n\n")
+
+            # Check internet connection if local installation is not found
             self.progress.emit("🌐 Checking internet connection...\n")
             if not check_internet_connection():
                 self.progress.emit("❌ No internet connection detected!\n\n")
-                self.progress.emit("⚠️  Installation requires internet access to download PyQtWebEngine.\n\n")
+                self.progress.emit(f"⚠️  Installation requires internet access to download {self.package_name}.\n\n")
                 self.progress.emit("Please:\n")
                 self.progress.emit("1. Connect to the internet\n")
                 self.progress.emit("2. Try the installation again\n")
@@ -139,63 +138,66 @@ class InstallThread(QThread):
             else:
                 self.progress.emit(f"✓ Python: {python_exe}\n")
             
-            # Store python_exe for potential pip installation
-            self.python_exe = python_exe
+            # Auto-detect PyQt version to ensure compatible WebEngine
+            try:
+                from qgis.PyQt.QtCore import PYQT_VERSION_STR
+                pyqt_version = PYQT_VERSION_STR
+                self.progress.emit(f"🔍 Detected PyQt version: {pyqt_version}\n")
+            except ImportError:
+                pyqt_version = None
+                self.progress.emit("⚠️  Could not detect PyQt version, installing latest\n")
             
-            # Check if pip is installed
-            self.progress.emit("\n🔍 Checking if pip is installed...\n")
-            if not check_pip_installed(python_exe):
-                self.progress.emit("❌ pip is NOT installed!\n\n")
-                self.progress.emit("pip is required to install PyQtWebEngine.\n")
-                
-                if self.install_pip_if_missing:
-                    # User agreed to install pip
-                    self.progress.emit("\n🔧 Installing pip...\n")
-                    if install_pip(python_exe, self.progress.emit):
-                        self.progress.emit("\n✅ pip is now installed. Continuing with PyQtWebEngine installation...\n")
-                    else:
-                        self.progress.emit("\n❌ Could not install pip automatically.\n\n")
-                        self.progress.emit("═" * 50 + "\n")
-                        self.progress.emit("📋 MANUAL INSTALLATION INSTRUCTIONS:\n")
-                        self.progress.emit("═" * 50 + "\n\n")
-                        self.progress.emit("Option 1: Using ensurepip (Recommended)\n")
-                        self.progress.emit("   Open OSGeo4W Shell and run:\n")
-                        self.progress.emit(f"   {python_exe} -m ensurepip --upgrade\n\n")
-                        self.progress.emit("Option 2: Download get-pip.py\n")
-                        self.progress.emit("   1. Download from: https://bootstrap.pypa.io/get-pip.py\n")
-                        self.progress.emit("   2. Open OSGeo4W Shell and run:\n")
-                        self.progress.emit(f"   {python_exe} get-pip.py\n\n")
-                        self.progress.emit("After installing pip, restart QGIS and try again.\n")
-                        self.finished.emit(False, "pip_not_installed")
-                        return
-                else:
-                    # Emit signal to ask user about pip installation
-                    self.pip_not_found.emit(python_exe)
-                    self.finished.emit(False, "pip_not_installed_ask_user")
-                    return
-            else:
-                self.progress.emit("✓ pip is installed\n")
-            
-            self.progress.emit("\n📦 Installing PyQtWebEngine...\n")
+            self.progress.emit(f"\n📦 Installing {self.package_name}...\n")
             self.progress.emit("⏳ This may take 1-2 minutes...\n")
             self.progress.emit("⚠️  Keep this window open and do NOT close QGIS\n\n")
             
-            # Run pip install
-            result = subprocess.run(
-                [python_exe, "-m", "pip", "install", "PyQtWebEngine"],
-                capture_output=True,
-                text=True,
-                timeout=300
-            )
-            
-            if result.returncode == 0:
-                self.progress.emit("✅ Installation successful!\n")
-                self.progress.emit("\n🔄 Please restart QGIS to use the Preview feature.\n")
-                self.finished.emit(True, "Installation successful")
+            # Build pip install command with version pinning
+            if pyqt_version:
+                package_spec = f"{self.package_name}=={pyqt_version}"
+                self.progress.emit(f"📌 Installing version {pyqt_version} to match PyQt{self.qt_version}\n")
             else:
-                error_msg = result.stderr if result.stderr else result.stdout
-                self.progress.emit(f"❌ Installation failed:\n{error_msg}\n")
-                self.finished.emit(False, error_msg)
+                package_spec = self.package_name
+            
+            pip_cmd = [python_exe, "-m", "pip", "install", "--upgrade", "--user", package_spec, "--timeout", "120"]
+            
+            import site
+            user_site = site.getusersitepackages()
+            self.progress.emit(f"📁 Installing to user site-packages: {user_site}\n\n")
+            
+            # Run pip install with retry logic
+            max_retries = 3
+            for attempt in range(1, max_retries + 1):
+                self.progress.emit(f"🔄 Attempt {attempt} of {max_retries}...\n")
+                
+                result = subprocess.run(
+                    pip_cmd,
+                    capture_output=True,
+                    text=True,
+                    timeout=600  # 10 minutes timeout
+                )
+                
+                if result.returncode == 0:
+                    self.progress.emit("✅ Installation successful!\n")
+                    self.progress.emit("\n🔄 Please restart QGIS to use the Preview feature.\n")
+                    self.finished.emit(True, "Installation successful")
+                    return
+                else:
+                    error_msg = result.stderr if result.stderr else result.stdout
+                    # Check if it's a timeout error
+                    if "timed out" in error_msg.lower() or "timeout" in error_msg.lower():
+                        if attempt < max_retries:
+                            self.progress.emit(f"⚠️ Network timeout. Retrying in 5 seconds...\n\n")
+                            import time
+                            time.sleep(5)
+                            continue
+                    self.progress.emit(f"❌ Installation failed:\n{error_msg}\n")
+                    self.finished.emit(False, error_msg)
+                    return
+            
+            # All retries exhausted
+            self.progress.emit("❌ Installation failed after all retries.\n")
+            self.progress.emit("Please check your internet connection and try again.\n")
+            self.finished.emit(False, "Installation failed after multiple retries")
                 
         except subprocess.TimeoutExpired:
             self.progress.emit("❌ Installation timed out (exceeded 5 minutes)\n")
@@ -206,14 +208,17 @@ class InstallThread(QThread):
 
 
 class PyQtWebEngineInstallerDialog(QDialog):
-    """Dialog for installing PyQtWebEngine"""
+    """Dialog for installing PyQt WebEngine (Qt5 or Qt6)"""
     
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, plugin_dir=None):
         super().__init__(parent)
-        self.setWindowTitle("Install PyQtWebEngine")
+        self.qt_version = detect_qt_version()
+        self.package_name = get_webengine_package_name()
+        self.setWindowTitle(f"Install {self.package_name}")
         self.setGeometry(100, 100, 600, 400)
         self.install_thread = None
-        self.pending_python_exe = None  # Store python exe path when pip is not found
+        # Use plugin_dir if provided, otherwise derive from this file's location
+        self.plugin_dir = plugin_dir or os.path.dirname(os.path.abspath(__file__))
         self.init_ui()
         
     def init_ui(self):
@@ -221,7 +226,7 @@ class PyQtWebEngineInstallerDialog(QDialog):
         layout = QVBoxLayout()
         
         # Title
-        title = QLabel("PyQtWebEngine Installation")
+        title = QLabel(f"{self.package_name} Installation")
         title_font = QFont()
         title_font.setPointSize(12)
         title_font.setBold(True)
@@ -230,33 +235,41 @@ class PyQtWebEngineInstallerDialog(QDialog):
         
         # Description
         desc = QLabel(
-            "The Preview feature requires PyQtWebEngine.\n\n"
-            "Click 'Install' to automatically install it for your QGIS Python environment."
+            f"The Preview feature requires {self.package_name}.\n\n"
+            f"Detected: Qt{self.qt_version} - Click 'Install' to automatically install it for your QGIS Python environment."
         )
         layout.addWidget(desc)
         
         # Internet connection requirement
-        internet_notice = QLabel(
-            "⚠️  IMPORTANT: Internet connection is REQUIRED for installation\n"
-            "The installer will download PyQtWebEngine (~50-100 MB)"
+        self.internet_notice = QLabel(
+            f"⚠️  IMPORTANT: Internet connection is REQUIRED for installation\n"
+            f"The installer will download {self.package_name} (~50-100 MB)"
         )
         internet_notice_font = QFont()
         internet_notice_font.setPointSize(9)
         internet_notice_font.setItalic(True)
-        internet_notice.setFont(internet_notice_font)
-        internet_notice.setStyleSheet("color: #ff6b6b; padding: 10px; background-color: #ffe0e0; border-radius: 5px;")
-        layout.addWidget(internet_notice)
+        self.internet_notice.setFont(internet_notice_font)
+        self.internet_notice.setStyleSheet("color: #ff6b6b; padding: 10px; background-color: #ffe0e0; border-radius: 5px;")
+        layout.addWidget(self.internet_notice)
         
         # Output text area
         self.output_text = QTextEdit()
         self.output_text.setReadOnly(True)
         self.output_text.setFont(QFont("Courier", 9))
         layout.addWidget(self.output_text)
+
+        # Do not show again checkbox
+        self.skip_checkbox = QCheckBox("Don't show this installer automatically again")
+        settings = QgsSettings()
+        skip_installer = settings.value("q2g/pyqtwebengine/skip_installer", False, type=bool)
+        self.skip_checkbox.setChecked(skip_installer)
+        self.skip_checkbox.stateChanged.connect(self._on_skip_checkbox_changed)
+        layout.addWidget(self.skip_checkbox)
         
         # Buttons
         button_layout = QHBoxLayout()
         
-        self.install_btn = QPushButton("🔧 Install PyQtWebEngine")
+        self.install_btn = QPushButton("🔧 Install PyQt6-WebEngine")
         self.install_btn.clicked.connect(self.start_installation)
         button_layout.addWidget(self.install_btn)
         
@@ -271,18 +284,17 @@ class PyQtWebEngineInstallerDialog(QDialog):
         layout.addLayout(button_layout)
         self.setLayout(layout)
         
-    def start_installation(self, install_pip_if_missing=False):
+    def start_installation(self):
         """Start the installation process"""
-        if not install_pip_if_missing:
-            self.output_text.clear()
+        self.output_text.clear()
         self.install_btn.setEnabled(False)
         self.docs_btn.setEnabled(False)
         self.close_btn.setEnabled(False)
         
-        self.install_thread = InstallThread(install_pip_if_missing=install_pip_if_missing)
+        # Install to user site-packages (AppData) using --user flag
+        self.install_thread = InstallThread()
         self.install_thread.progress.connect(self.append_output)
         self.install_thread.finished.connect(self.installation_finished)
-        self.install_thread.pip_not_found.connect(self.on_pip_not_found)
         self.install_thread.start()
         
     def append_output(self, text):
@@ -300,12 +312,20 @@ class PyQtWebEngineInstallerDialog(QDialog):
         self.close_btn.setEnabled(True)
         
         if success:
-            QMessageBox.information(
-                self,
-                "Installation Complete",
-                "✅ PyQtWebEngine installed successfully!\n\n"
-                "Please restart QGIS to use the Preview feature."
-            )
+            if message == "Already installed":
+                QMessageBox.information(
+                    self,
+                    "Installation Not Needed",
+                    "✅ PyQt6-WebEngine is already installed!\n\n"
+                    "If the Preview feature is not working, please restart QGIS."
+                )
+            else:
+                QMessageBox.information(
+                    self,
+                    "Installation Complete",
+                    "✅ PyQt6-WebEngine installed successfully!\n\n"
+                    "Please restart QGIS to use the Preview feature."
+                )
         else:
             # Check if it's an internet connection issue
             if "No internet connection" in message:
@@ -319,18 +339,6 @@ class PyQtWebEngineInstallerDialog(QDialog):
                     "3. Try the installation again\n\n"
                     "If you continue to have issues, contact us at mygis@gis.my"
                 )
-            elif message == "pip_not_installed_ask_user":
-                # User will be prompted via on_pip_not_found signal
-                pass
-            elif message == "pip_not_installed":
-                # pip installation failed, instructions already shown in output
-                QMessageBox.warning(
-                    self,
-                    "pip Not Installed",
-                    "❌ pip is not installed and automatic installation failed.\n\n"
-                    "Please see the manual installation instructions in the output area above.\n\n"
-                    "After installing pip manually, restart QGIS and try again."
-                )
             else:
                 QMessageBox.critical(
                     self,
@@ -338,60 +346,6 @@ class PyQtWebEngineInstallerDialog(QDialog):
                     f"❌ Installation failed:\n\n{message}\n\n"
                     "Please check the documentation or contact us at mygis@gis.my"
                 )
-    
-    def on_pip_not_found(self, python_exe):
-        """Handle pip not found - ask user if they want to install it"""
-        self.pending_python_exe = python_exe
-        
-        reply = QMessageBox.question(
-            self,
-            "pip Not Installed",
-            "❌ pip is NOT installed on your system.\n\n"
-            "pip is required to install PyQtWebEngine.\n\n"
-            "Would you like to install pip now?",
-            QMessageBox.Yes | QMessageBox.No,
-            QMessageBox.Yes
-        )
-        
-        if reply == QMessageBox.Yes:
-            # User wants to install pip - restart installation with pip install flag
-            self.append_output("\n" + "=" * 50 + "\n")
-            self.append_output("User chose to install pip...\n")
-            self.append_output("=" * 50 + "\n\n")
-            self.start_installation(install_pip_if_missing=True)
-        else:
-            # User declined - show manual installation instructions
-            self.show_manual_pip_instructions(python_exe)
-    
-    def show_manual_pip_instructions(self, python_exe):
-        """Show manual pip installation instructions when user declines automatic installation"""
-        self.append_output("\n" + "=" * 50 + "\n")
-        self.append_output("📋 MANUAL PIP INSTALLATION INSTRUCTIONS:\n")
-        self.append_output("=" * 50 + "\n\n")
-        self.append_output("Since you chose not to install pip automatically, here's how to do it manually:\n\n")
-        self.append_output("Option 1: Using ensurepip (Recommended)\n")
-        self.append_output("   1. Open OSGeo4W Shell (search for it in Start Menu)\n")
-        self.append_output("   2. Run the following command:\n")
-        self.append_output(f"      {python_exe} -m ensurepip --upgrade\n\n")
-        self.append_output("Option 2: Download get-pip.py\n")
-        self.append_output("   1. Download get-pip.py from:\n")
-        self.append_output("      https://bootstrap.pypa.io/get-pip.py\n")
-        self.append_output("   2. Open OSGeo4W Shell\n")
-        self.append_output("   3. Navigate to where you downloaded get-pip.py\n")
-        self.append_output("   4. Run:\n")
-        self.append_output(f"      {python_exe} get-pip.py\n\n")
-        self.append_output("After installing pip:\n")
-        self.append_output("   1. Restart QGIS\n")
-        self.append_output("   2. Open GeoServerConnector\n")
-        self.append_output("   3. Try the Preview feature again\n")
-        self.append_output("\n" + "=" * 50 + "\n")
-        
-        QMessageBox.information(
-            self,
-            "Manual Installation Required",
-            "📋 Manual pip installation instructions have been displayed in the output area.\n\n"
-            "Please follow the instructions to install pip, then restart QGIS and try again."
-        )
     
     def open_documentation(self):
         """Open documentation"""
@@ -402,12 +356,12 @@ class PyQtWebEngineInstallerDialog(QDialog):
         system = platform.system()
         
         doc_urls = {
-            "Windows": "https://github.com/yourusername/geoserverconnector/wiki/Setup-Windows",
-            "Darwin": "https://github.com/yourusername/geoserverconnector/wiki/Setup-Mac",
-            "Linux": "https://github.com/yourusername/geoserverconnector/wiki/Setup-Linux"
+            "Windows": "https://github.com/gisinnovationmy/Q2G-QGIStoGeoServerConnector",
+            "Darwin": "https://github.com/gisinnovationmy/Q2G-QGIStoGeoServerConnector",
+            "Linux": "https://github.com/gisinnovationmy/Q2G-QGIStoGeoServerConnector"
         }
         
-        doc_url = doc_urls.get(system, "https://github.com/yourusername/geoserverconnector/wiki")
+        doc_url = doc_urls.get(system, "https://github.com/gisinnovationmy/Q2G-QGIStoGeoServerConnector")
         
         try:
             webbrowser.open(doc_url)
@@ -424,3 +378,7 @@ class PyQtWebEngineInstallerDialog(QDialog):
                 "• QGIS version\n"
                 "• Error message from the installation log"
             )
+
+    def _on_skip_checkbox_changed(self, state):
+        settings = QgsSettings()
+        settings.setValue("q2g/pyqtwebengine/skip_installer", state == Qt.CheckState.Checked)

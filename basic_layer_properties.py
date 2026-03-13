@@ -2,8 +2,8 @@
 Dialog for displaying layer extents information.
 """
 
-from PyQt5.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QTableWidget, QTableWidgetItem, QPushButton, QFileDialog, QApplication
-from PyQt5.QtCore import Qt
+from qgis.PyQt.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QTableWidget, QTableWidgetItem, QPushButton, QFileDialog, QApplication
+from qgis.PyQt.QtCore import Qt
 
 
 class LayerExtentsDialog(QDialog):
@@ -15,9 +15,9 @@ class LayerExtentsDialog(QDialog):
         self.layer = layer
         self.setWindowTitle(f"Basic Layer Properties - {layer.name()}")
         self.setMinimumSize(500, 300)
-        self.setWindowModality(Qt.NonModal)
-        self.setAttribute(Qt.WA_DeleteOnClose, True)
-        self.setWindowFlags(Qt.Window | Qt.WindowSystemMenuHint | Qt.WindowMinMaxButtonsHint | Qt.WindowCloseButtonHint)
+        self.setWindowModality(Qt.WindowModality.NonModal)
+        self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose, True)
+        self.setWindowFlags(Qt.WindowType.Window | Qt.WindowType.WindowSystemMenuHint | Qt.WindowType.WindowMinMaxButtonsHint | Qt.WindowType.WindowCloseButtonHint)
         
         self._setup_ui()
         self._populate_extents()
@@ -31,9 +31,9 @@ class LayerExtentsDialog(QDialog):
         self.extents_table.setColumnCount(2)
         self.extents_table.setHorizontalHeaderLabels(["Property", "Value"])
         self.extents_table.setAlternatingRowColors(True)
-        self.extents_table.setEditTriggers(QTableWidget.NoEditTriggers)
-        self.extents_table.setSelectionMode(QTableWidget.SingleSelection)
-        self.extents_table.setSelectionBehavior(QTableWidget.SelectRows)
+        self.extents_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        self.extents_table.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
+        self.extents_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         layout.addWidget(self.extents_table)
         
         # Button layout
@@ -119,10 +119,16 @@ class LayerExtentsDialog(QDialog):
         self.copy_btn.setEnabled(False)
         
         # Reset button after 1 second
-        from PyQt5.QtCore import QTimer
+        from qgis.PyQt.QtCore import QTimer
         QTimer.singleShot(1000, lambda: self._reset_copy_button(original_text))
     
     def _reset_copy_button(self, original_text):
         """Reset the copy button to its original state."""
-        self.copy_btn.setText(original_text)
-        self.copy_btn.setEnabled(True)
+        # Check if button still exists (dialog might have been closed)
+        if hasattr(self, 'copy_btn') and self.copy_btn is not None:
+            try:
+                self.copy_btn.setText(original_text)
+                self.copy_btn.setEnabled(True)
+            except RuntimeError:
+                # Button was deleted, ignore
+                pass

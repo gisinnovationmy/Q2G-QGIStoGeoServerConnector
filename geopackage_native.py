@@ -48,7 +48,7 @@ class GeoPackageNativeUploader:
             
             # Sanitize names for GeoServer
             sanitized_layer_name = self.main._sanitize_layer_name(layer.name())
-            datastore_name = f"{sanitized_layer_name}_gpkg_store"
+            datastore_name = sanitized_layer_name
             
             self.main.log_message(f"🔄 Native GeoPackage upload starting...")
             self.main.log_message(f"   Source: {source_path}")

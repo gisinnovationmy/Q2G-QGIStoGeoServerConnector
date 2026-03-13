@@ -5,15 +5,42 @@ Extracted from main.py for better code organization and maintainability.
 """
 
 import os
+import sys
+import importlib.util
 from qgis.core import Qgis
 from qgis.PyQt.QtWidgets import QMessageBox
 from qgis.PyQt.QtCore import Qt
-from .layer_format_detector import get_layer_provider_info
-from .upload_controller import UploadController
-from .upload_processor import UploadProcessor
-from .upload_batch_handler import UploadBatchHandler
-from .duplicate_layer_handler import DuplicateLayerHandler
-from .upload_thread import UploadThread
+
+# Ensure we load modules from the same folder as this file
+_CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
+if _CURRENT_DIR not in sys.path:
+    sys.path.insert(0, _CURRENT_DIR)
+
+def _load_local_module(module_name):
+    """Load a module from the same directory as this file."""
+    module_file = os.path.join(_CURRENT_DIR, f"{module_name}.py")
+    if not os.path.exists(module_file):
+        raise ImportError(f"Module not found: {module_file}")
+    spec = importlib.util.spec_from_file_location(module_name, module_file)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"Could not load spec for: {module_file}")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+# Load local modules
+_lfd = _load_local_module("layer_format_detector")
+get_layer_provider_info = _lfd.get_layer_provider_info
+_uc = _load_local_module("upload_controller")
+UploadController = _uc.UploadController
+_up = _load_local_module("upload_processor")
+UploadProcessor = _up.UploadProcessor
+_ubh = _load_local_module("upload_batch_handler")
+UploadBatchHandler = _ubh.UploadBatchHandler
+_dlh = _load_local_module("duplicate_layer_handler")
+DuplicateLayerHandler = _dlh.DuplicateLayerHandler
+_ut = _load_local_module("upload_thread")
+UploadThread = _ut.UploadThread
 
 
 class QGISLayerLoader:
@@ -45,7 +72,7 @@ class QGISLayerLoader:
         # DEBUG: Log provider info for each selected QGIS layer
         selected_items = self.main.qgis_layers_tree.selectedItems() if hasattr(self.main, 'qgis_layers_tree') else []
         for item in selected_items:
-            layer = item.data(0, Qt.UserRole) if hasattr(item, 'data') else None
+            layer = item.data(0, Qt.ItemDataRole.UserRole) if hasattr(item, 'data') else None
             if layer:
                 provider_info = get_layer_provider_info(layer)
                 self.main.log_message(f"DEBUG: Provider info for layer '{layer.name()}': {provider_info}")

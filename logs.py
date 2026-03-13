@@ -18,7 +18,7 @@ class LogWindow(QDialog):
         super().__init__(parent)
         self.setWindowTitle(title)
         self.setMinimumSize(700, 500)
-        self.setWindowFlags(Qt.Window | Qt.WindowSystemMenuHint | Qt.WindowMinMaxButtonsHint | Qt.WindowCloseButtonHint)
+        self.setWindowFlags(Qt.WindowType.Window | Qt.WindowType.WindowSystemMenuHint | Qt.WindowType.WindowMinMaxButtonsHint | Qt.WindowType.WindowCloseButtonHint)
         
         self.live_mode = live_mode
         if log_messages is None:
@@ -63,7 +63,7 @@ class LogWindow(QDialog):
         if not font.exactMatch():
             font = QFont("Courier New")
         font.setPointSize(9)
-        font.setStyleStrategy(QFont.PreferAntialias)
+        font.setStyleStrategy(QFont.StyleStrategy.PreferAntialias)
         self.text_area.setFont(font)
         
         # Set modern styling
@@ -261,7 +261,7 @@ class LogWindow(QDialog):
     def append_message_with_color(self, message, level=None):
         """Append a message to the text area with appropriate color coding."""
         cursor = self.text_area.textCursor()
-        cursor.movePosition(QTextCursor.End)
+        cursor.movePosition(QTextCursor.MoveOperation.End)
         
         # Sanitize message - remove problematic characters
         message_str = str(message).strip()
@@ -283,12 +283,12 @@ class LogWindow(QDialog):
         cursor.insertHtml(html_text)
         
         # Auto-scroll to bottom
-        self.text_area.moveCursor(QTextCursor.End)
+        self.text_area.moveCursor(QTextCursor.MoveOperation.End)
     
     def append_layer_title(self, layer_name):
         """Append a special layer processing title in blue color, 2 pts bigger than normal font."""
         cursor = self.text_area.textCursor()
-        cursor.movePosition(QTextCursor.End)
+        cursor.movePosition(QTextCursor.MoveOperation.End)
         
         # Create the title message (without newline - HTML will handle it)
         title_message = f"Now processing layer \"{layer_name}\":"
@@ -298,7 +298,7 @@ class LogWindow(QDialog):
         cursor.insertHtml(html_text)
         
         # Auto-scroll to bottom
-        self.text_area.moveCursor(QTextCursor.End)
+        self.text_area.moveCursor(QTextCursor.MoveOperation.End)
     
     def append_message(self, message, level=None):
         """Public method to append a message with color coding."""
@@ -700,7 +700,7 @@ class UploadLogTracker(QObject):
     def show_log_window(self, parent=None, title="Upload Summary"):
         """Show the log window with all messages."""
         log_window = LogWindow(self.messages, title, parent)
-        log_window.exec_()
+        log_window.exec()
     
     def get_summary(self):
         """Generate a summary of the upload results."""
@@ -742,8 +742,8 @@ class UploadLogTracker(QObject):
         
         # Set column widths
         header = table.horizontalHeader()
-        header.setSectionResizeMode(0, QHeaderView.Stretch)
-        header.setSectionResizeMode(1, QHeaderView.ResizeToContents)
+        header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        header.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
         
         # Prepare all rows with status and color
         all_rows = []
@@ -786,7 +786,7 @@ class UploadLogTracker(QObject):
             
             # Status column
             status_item = QTableWidgetItem(row_data['status'])
-            status_item.setTextAlignment(Qt.AlignCenter)
+            status_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
             status_item.setForeground(row_data['color'])
             table.setItem(idx, 1, status_item)
             
@@ -795,8 +795,8 @@ class UploadLogTracker(QObject):
             table.item(idx, 1).row_type = row_data['type']
         
         # Make table read-only
-        table.setEditTriggers(QTableWidget.NoEditTriggers)
-        table.setSelectionBehavior(QTableWidget.SelectRows)
+        table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         
         layout.addWidget(table)
         
@@ -854,7 +854,7 @@ class UploadLogTracker(QObject):
         
         layout.addLayout(button_layout)
         dialog.setLayout(layout)
-        dialog.exec_()
+        dialog.exec()
     
     def save_log_to_file(self, file_path=None):
         """

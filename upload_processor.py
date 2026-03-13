@@ -4,7 +4,27 @@ Handles the core upload logic for different layer types.
 Separates upload routing and processing from the main UI class.
 """
 
+import os
+import sys
+import importlib.util
 from qgis.core import Qgis
+
+# Ensure we load modules from the same folder as this file
+_CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
+if _CURRENT_DIR not in sys.path:
+    sys.path.insert(0, _CURRENT_DIR)
+
+def _load_local_module(module_name):
+    """Load a module from the same directory as this file."""
+    module_file = os.path.join(_CURRENT_DIR, f"{module_name}.py")
+    if not os.path.exists(module_file):
+        raise ImportError(f"Module not found: {module_file}")
+    spec = importlib.util.spec_from_file_location(module_name, module_file)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"Could not load spec for: {module_file}")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 class UploadProcessor:
@@ -18,6 +38,11 @@ class UploadProcessor:
             main_instance: Reference to main QGISGeoServerLayerLoader instance
         """
         self.main = main_instance
+        
+        # Initialize CRS validator
+        _crs = _load_local_module("crs_validator")
+        CRSValidator = _crs.CRSValidator
+        self.crs_validator = CRSValidator(main_instance)
     
     def process_upload(self, layer, layer_name, workspace, url, username, password, upload_method, native_format):
         """
@@ -36,6 +61,14 @@ class UploadProcessor:
         Returns:
             bool: True if upload succeeded, False otherwise
         """
+        # Validate and convert CRS if necessary
+        converted_layer, was_converted, original_crs = self.crs_validator.validate_and_convert_crs(layer)
+        
+        if was_converted:
+            self.main.log_message(f"📍 Layer CRS converted from {original_crs} to EPSG:4326 for GeoServer compatibility")
+            # Use the converted layer for upload
+            layer = converted_layer
+        
         # Force GeoPackage to use importer instead of gpkg_native
         if native_format == 'GeoPackage' and upload_method == 'gpkg_native':
             self.main.log_message(f"Routing GeoPackage through importer instead of gpkg_native for better compatibility")

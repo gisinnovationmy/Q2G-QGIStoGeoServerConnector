@@ -7,8 +7,13 @@ import os
 from qgis.PyQt.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QPushButton, QComboBox, QLabel
 )
-from qgis.PyQt.QtWebEngineWidgets import QWebEngineView
 from qgis.PyQt.QtCore import Qt, QUrl
+
+# Try to import WebEngine with PyQt6/PyQt5 fallback
+try:
+    from PyQt6.QtWebEngineWidgets import QWebEngineView
+except ImportError:
+    from PyQt5.QtWebEngineWidgets import QWebEngineView
 from qgis.PyQt.QtGui import QIcon
 
 
@@ -19,11 +24,12 @@ class DocumentationDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle("GeoVirtuallis QGIS Plugin - Documentation")
         self.setMinimumSize(1000, 700)
-        self.setWindowFlags(Qt.Window | Qt.WindowMinMaxButtonsHint | Qt.WindowCloseButtonHint)
-        
+        self.setWindowFlags(Qt.WindowType.Window | Qt.WindowType.WindowMinMaxButtonsHint | Qt.WindowType.WindowCloseButtonHint)
+        self.setWindowModality(Qt.WindowModality.NonModal)
+
         self.plugin_dir = plugin_dir or os.path.dirname(os.path.abspath(__file__))
         self.manual_dir = os.path.join(self.plugin_dir, 'manual')
-        
+
         # Documentation pages
         self.pages = {
             'Home': 'index.html',
@@ -36,28 +42,45 @@ class DocumentationDialog(QDialog):
             'Preview': '07-preview.html',
             'Troubleshooting': '08-troubleshooting.html',
             'Advanced Features': '09-advanced-features.html',
-            'FAQ': '10-faq.html',
+            'Debug Mode': '10-debug-mode.html',
+            'QtWebEngine Config': '11-qtwebengine-config.html',
+            'FAQ': '12-faq.html',
         }
-        
+        self.page_keys = list(self.pages.keys())
+
         self.setup_ui()
-        self.load_page('index.html')
+        self.load_page(self.pages['Home'])
     
     def setup_ui(self):
         """Setup the user interface."""
         layout = QVBoxLayout()
         layout.setContentsMargins(12, 12, 12, 12)
         layout.setSpacing(10)
+
+        # Web view for displaying HTML
+        self.web_view = QWebEngineView()
+        self.web_view.urlChanged.connect(self.update_nav_buttons)
         
         # Navigation bar
         nav_layout = QHBoxLayout()
         nav_layout.setSpacing(8)
         
+        self.back_button = QPushButton("Back")
+        self.back_button.clicked.connect(self.web_view.back)
+        self.back_button.setMaximumWidth(80)
+        nav_layout.addWidget(self.back_button)
+
+        self.next_button = QPushButton("Next")
+        self.next_button.clicked.connect(self.web_view.forward)
+        self.next_button.setMaximumWidth(80)
+        nav_layout.addWidget(self.next_button)
+
         # Page selector dropdown
         nav_label = QLabel("Documentation:")
         nav_layout.addWidget(nav_label)
         
         self.page_combo = QComboBox()
-        self.page_combo.addItems(self.pages.keys())
+        self.page_combo.addItems(self.page_keys)
         self.page_combo.currentTextChanged.connect(self.on_page_changed)
         nav_layout.addWidget(self.page_combo)
         
@@ -71,8 +94,6 @@ class DocumentationDialog(QDialog):
         
         layout.addLayout(nav_layout)
         
-        # Web view for displaying HTML
-        self.web_view = QWebEngineView()
         layout.addWidget(self.web_view)
         
         self.setLayout(layout)
@@ -111,6 +132,7 @@ class DocumentationDialog(QDialog):
             # Load the HTML file
             file_url = QUrl.fromLocalFile(file_path)
             self.web_view.load(file_url)
+            self.update_nav_buttons()
             
         except Exception as e:
             error_html = f"""
@@ -130,3 +152,8 @@ class DocumentationDialog(QDialog):
             </html>
             """
             self.web_view.setHtml(error_html)
+
+    def update_nav_buttons(self):
+        """Update the state of the Back and Next buttons based on web history."""
+        self.back_button.setEnabled(self.web_view.page().history().canGoBack())
+        self.next_button.setEnabled(self.web_view.page().history().canGoForward())

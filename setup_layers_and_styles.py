@@ -5,10 +5,29 @@ Extracted from main.py for better code organization and maintainability.
 """
 
 import os
+import sys
+import importlib.util
 from qgis.PyQt.QtWidgets import (QGroupBox, QVBoxLayout, QHBoxLayout, QListWidget, 
                                 QPushButton, QCheckBox, QAbstractItemView, QSizePolicy, QLineEdit)
 from qgis.PyQt.QtCore import QSize
 from qgis.PyQt.QtGui import QIcon
+
+# Ensure we load modules from the same folder as this file
+_CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
+if _CURRENT_DIR not in sys.path:
+    sys.path.insert(0, _CURRENT_DIR)
+
+def _load_local_module(module_name):
+    """Load a module from the same directory as this file."""
+    module_file = os.path.join(_CURRENT_DIR, f"{module_name}.py")
+    if not os.path.exists(module_file):
+        raise ImportError(f"Module not found: {module_file}")
+    spec = importlib.util.spec_from_file_location(module_name, module_file)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"Could not load spec for: {module_file}")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 class LayersAndStylesSetupManager:
@@ -52,18 +71,13 @@ class LayersAndStylesSetupManager:
         wl_layout = QVBoxLayout()
         
         # Create and configure the draggable layers list widget
-        try:
-            from .draggable_layers_list import DraggableLayersList
-        except ImportError:
-            # Fallback for direct execution
-            import sys
-            import os
-            sys.path.insert(0, os.path.dirname(__file__))
-            from draggable_layers_list import DraggableLayersList
+        _dll = _load_local_module("draggable_layers_list")
+        DraggableLayersList = _dll.DraggableLayersList
         
         self.main.workspace_layers_list = DraggableLayersList()
         self.main.workspace_layers_list.itemSelectionChanged.connect(self.main.load_layer_styles)
         self.main.workspace_layers_list.itemSelectionChanged.connect(self.main.uncheck_select_all_if_checked)
+        self.main.workspace_layers_list.itemSelectionChanged.connect(self.main._highlight_related_datastore_and_style)
         self.main.workspace_layers_list.model().rowsInserted.connect(self.main.uncheck_select_all_if_checked)
         self.main.workspace_layers_list.model().rowsRemoved.connect(self.main.uncheck_select_all_if_checked)
         
@@ -114,7 +128,7 @@ class LayersAndStylesSetupManager:
         
         # Create and configure the styles list widget
         self.main.layer_styles_list = QListWidget()
-        self.main.layer_styles_list.setSelectionMode(QAbstractItemView.ExtendedSelection)
+        self.main.layer_styles_list.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
         # Connect selection change to uncheck "Select All Styles" if not all items are selected
         self.main.layer_styles_list.itemSelectionChanged.connect(self.main.uncheck_select_all_styles_if_needed)
         # Connect model changes to uncheck "Select All Styles" when items are added/removed
@@ -167,7 +181,7 @@ class LayersAndStylesSetupManager:
         
         # Create and configure the datastores list widget
         self.main.datastores_list = QListWidget()
-        self.main.datastores_list.setSelectionMode(QAbstractItemView.ExtendedSelection)
+        self.main.datastores_list.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
         # Connect selection change to uncheck "Select All" if not all items are selected
         self.main.datastores_list.itemSelectionChanged.connect(self.main.uncheck_select_all_datastores_if_needed)
         # Connect model changes to uncheck "Select All" when items are added/removed
@@ -216,7 +230,7 @@ class LayersAndStylesSetupManager:
         button.setIcon(QIcon(os.path.join(self.main.plugin_dir, 'icons/bin.svg')))
         button.setIconSize(QSize(16, 16))
         button.setFixedSize(16, 16)
-        button.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+        button.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
         button.setToolTip(tooltip)
         button.setStyleSheet("""
             QPushButton {

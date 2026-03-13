@@ -16,8 +16,8 @@ class StopUploadButton(QWidget):
     def __init__(self, parent=None):
         """Initialize the stop upload button."""
         super().__init__(parent)
-        self.setWindowFlags(Qt.Window | Qt.WindowStaysOnTopHint | Qt.FramelessWindowHint)
-        self.setAttribute(Qt.WA_TranslucentBackground)
+        self.setWindowFlags(Qt.WindowType.Window | Qt.WindowType.WindowStaysOnTopHint | Qt.WindowType.FramelessWindowHint)
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         
         # Create button
         self.button = QPushButton("🛑 Stop Upload")

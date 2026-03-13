@@ -1,11 +1,11 @@
 import os
 import configparser
-from PyQt5.QtWidgets import (
+from qgis.PyQt.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGroupBox, QCheckBox, QPushButton, 
-    QLabel, QRadioButton, QButtonGroup, QSpinBox
+    QLabel, QTextEdit, QRadioButton, QButtonGroup, QSpinBox, QScrollArea
 )
-from PyQt5.QtCore import Qt, QTimer, QThread, pyqtSignal
-from PyQt5.QtGui import QPixmap
+from qgis.PyQt.QtCore import Qt, QTimer, QThread, pyqtSignal
+from qgis.PyQt.QtGui import QPixmap
 
 # Try to import Qgis for logging levels
 try:
@@ -27,14 +27,19 @@ class RightPanel(QWidget):
         self._load_controls_state()
 
     def _init_ui(self):
-        # Create main layout with minimal margins
+        # Create main layout for the panel with minimal margins
         main_layout = QVBoxLayout()
-        main_layout.setContentsMargins(8, 8, 8, 8)  # Padding inside
-        main_layout.setSpacing(6)  # Space between widgets
+        main_layout.setContentsMargins(0, 0, 0, 0)  # No margins to avoid cutting widgets
+        main_layout.setSpacing(0)
         
-        # Add border and styling to the panel (no margin/padding to avoid cutting)
-        self.setStyleSheet("""
-            RightPanel {
+        # Create scroll area
+        scroll_area = QScrollArea()
+        scroll_area.setWidgetResizable(True)
+        scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        # Add outline style (no border that takes space)
+        scroll_area.setStyleSheet("""
+            QScrollArea {
                 border: 1px solid #cccccc;
                 border-radius: 0px;
                 background-color: white;
@@ -42,6 +47,12 @@ class RightPanel(QWidget):
                 padding: 0px;
             }
         """)
+        
+        # Create content widget for scroll area
+        content_widget = QWidget()
+        right_layout = QVBoxLayout()
+        right_layout.setContentsMargins(8, 8, 8, 8)  # Padding inside the scroll area
+        right_layout.setSpacing(6)  # Space between widgets
 
         controls_group = QGroupBox("Map Controls")
         controls_layout = QVBoxLayout()
@@ -60,10 +71,10 @@ class RightPanel(QWidget):
             controls_layout.addWidget(cb)
 
         controls_group.setLayout(controls_layout)
-        main_layout.addWidget(controls_group)
+        right_layout.addWidget(controls_group)
 
         # Add spacing between controls and buttons
-        main_layout.addSpacing(10)
+        right_layout.addSpacing(10)
         
         # Add Library Mode group (Local vs CDN)
         library_group = QGroupBox("JavaScript Library Mode")
@@ -78,7 +89,7 @@ class RightPanel(QWidget):
         self.library_mode_group = QButtonGroup(self)
         self.library_mode_group.addButton(self.rb_lib_local)
         self.library_mode_group.addButton(self.rb_lib_cdn)
-        main_layout.addWidget(library_group)
+        right_layout.addWidget(library_group)
         
         # Add Local Server Port configuration (hidden by default)
         self.port_group = QGroupBox("Local Server Configuration")
@@ -97,25 +108,77 @@ class RightPanel(QWidget):
         port_layout.addWidget(self.restart_server_btn)
         self.port_group.setLayout(port_layout)
         self.port_group.setVisible(False)  # Hidden by default
-        main_layout.addWidget(self.port_group)
+        right_layout.addWidget(self.port_group)
         
         # Add spacing after port config
-        main_layout.addSpacing(10)
+        right_layout.addSpacing(10)
         
         # Add Full Map button
         self.full_map_btn = QPushButton("🗺️ Full Map")
         self.full_map_btn.setToolTip("Collapse panels to view full map")
         self.full_map_btn.setMinimumHeight(32)
-        main_layout.addWidget(self.full_map_btn)
+        right_layout.addWidget(self.full_map_btn)
         
         # Add reload layers button
         self.cache_reset_btn = QPushButton("🔄 Reload Map and Layers")
         self.cache_reset_btn.setToolTip("Reload the map and refresh all layers")
         self.cache_reset_btn.setMinimumHeight(32)
-        main_layout.addWidget(self.cache_reset_btn)
+        right_layout.addWidget(self.cache_reset_btn)
+        
+        # Add debug button (hidden by default, shown in debug mode)
+        self.debug_btn = QPushButton("🔍 Debug")
+        self.debug_btn.setToolTip("Run comprehensive QtWebEngine diagnostic tests")
+        self.debug_btn.setMinimumHeight(32)
+        self.debug_btn.setVisible(False)
+        right_layout.addWidget(self.debug_btn)
+        
+        # Add spacing after buttons
+        right_layout.addSpacing(10)
+        
+        # Status log for WebEngine loading stages (hidden by default, shown in debug mode)
+        self.status_label = QLabel("Loading Status:")
+        self.status_label.setVisible(False)
+        right_layout.addWidget(self.status_label)
+        self.status_log = QTextEdit()
+        self.status_log.setReadOnly(True)
+        self.status_log.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse | Qt.TextInteractionFlag.TextSelectableByKeyboard)
+        self.status_log.setMaximumHeight(150)
+        self.status_log.setStyleSheet("QTextEdit { font-family: Consolas, monospace; font-size: 10px; background: #1e1e1e; color: #00ff00; }")
+        self.status_log.setPlaceholderText("WebEngine loading status will appear here...")
+        self.status_log.setVisible(False)
+        right_layout.addWidget(self.status_log)
+        
+        # Clear status button (hidden by default, shown in debug mode)
+        self.clear_status_btn = QPushButton("Clear Status")
+        self.clear_status_btn.setMaximumHeight(24)
+        self.clear_status_btn.clicked.connect(lambda: self.status_log.clear())
+        self.clear_status_btn.setVisible(False)
+        right_layout.addWidget(self.clear_status_btn)
 
-        main_layout.addStretch()
+        right_layout.addStretch()
+        
+        # Set the layout to the content widget
+        content_widget.setLayout(right_layout)
+        
+        # Set the content widget to the scroll area
+        scroll_area.setWidget(content_widget)
+        
+        # Add scroll area to main layout
+        main_layout.addWidget(scroll_area)
+        
+        # Set the main layout to the panel
         self.setLayout(main_layout)
+
+    def set_debug_mode(self, is_enabled):
+        """Show or hide debug-related UI elements."""
+        if hasattr(self, 'debug_btn'):
+            self.debug_btn.setVisible(is_enabled)
+        if hasattr(self, 'status_label'):
+            self.status_label.setVisible(is_enabled)
+        if hasattr(self, 'status_log'):
+            self.status_log.setVisible(is_enabled)
+        if hasattr(self, 'clear_status_btn'):
+            self.clear_status_btn.setVisible(is_enabled)
 
     def _load_controls_state(self):
         """Load control checkbox states, base map mode, and library mode from controls.ini file."""
@@ -193,9 +256,26 @@ class RightPanel(QWidget):
                 else:
                     library_mode = 'CDN'
             
+            # Determine base map mode from main dialog if not provided
+            if base_map_mode is None:
+                # Try to get current base map mode from main dialog's radio buttons
+                if hasattr(self, 'main_dialog') and self.main_dialog:
+                    if hasattr(self.main_dialog, 'rb_base_none') and self.main_dialog.rb_base_none.isChecked():
+                        base_map_mode = 'No base map'
+                    elif hasattr(self.main_dialog, 'rb_base_dark') and self.main_dialog.rb_base_dark.isChecked():
+                        base_map_mode = 'Dark Mode'
+                    elif hasattr(self.main_dialog, 'rb_base_light') and self.main_dialog.rb_base_light.isChecked():
+                        base_map_mode = 'Light Mode'
+                    else:
+                        # Fallback to saved value
+                        base_map_mode = getattr(self, 'saved_base_map_mode', 'Light Mode')
+                else:
+                    # Fallback to saved value
+                    base_map_mode = getattr(self, 'saved_base_map_mode', 'Light Mode')
+            
             # Save base map mode and library mode
             config['settings'] = {
-                'base_map_mode': base_map_mode or getattr(self, 'saved_base_map_mode', 'Light Mode'),
+                'base_map_mode': base_map_mode,
                 'library_mode': library_mode
             }
             
@@ -240,6 +320,16 @@ class RightPanel(QWidget):
         except Exception as e:
             print(f"DEBUG: Error connecting cache_reset_btn: {e}")
             self.cache_reset_btn.clicked.connect(lambda: self._on_cache_reset_clicked())
+        
+        # Connect debug button with error handling
+        try:
+            self.debug_btn.clicked.connect(self._on_debug_clicked)
+            print("DEBUG: Debug button connected successfully")
+        except Exception as e:
+            print(f"DEBUG: Error connecting debug_btn: {e}")
+            # Disable the button if it can't be connected
+            self.debug_btn.setEnabled(False)
+            self.debug_btn.setToolTip("Debug functionality unavailable")
     
     def _on_cache_reset_clicked(self):
         """Fallback handler for cache reset button if clear_cache_and_reload is not available."""
@@ -255,6 +345,44 @@ class RightPanel(QWidget):
             print(f"DEBUG: Error in _on_cache_reset_clicked: {e}")
             import traceback
             traceback.print_exc()
+    
+    def _on_debug_clicked(self):
+        """Handle debug button click - show debug dialog directly."""
+        print("DEBUG: Debug button clicked")
+        try:
+            # Show a simple message first to test if the button works
+            from qgis.PyQt.QtWidgets import QMessageBox
+            QMessageBox.information(self, "Debug", "Debug functionality is being tested...")
+            
+            # Try relative import first (when running as plugin)
+            try:
+                from .debug_dialog import DebugDialog
+                print("DEBUG: DebugDialog imported successfully")
+                dialog = DebugDialog(self)
+                dialog.exec()
+                print("DEBUG: DebugDialog executed successfully")
+            except (ImportError, ValueError) as import_error:
+                print(f"DEBUG: Relative import failed: {import_error}")
+                # Fall back to absolute import (when running via exec())
+                try:
+                    import debug_dialog
+                    dialog = debug_dialog.DebugDialog(self)
+                    dialog.exec()
+                    print("DEBUG: DebugDialog executed successfully (absolute import)")
+                except Exception as fallback_error:
+                    print(f"DEBUG: Absolute import also failed: {fallback_error}")
+                    QMessageBox.warning(self, "Debug Error", 
+                        f"Could not import debug dialog:\n{import_error}\n{fallback_error}")
+            
+        except Exception as e:
+            print(f"DEBUG: Error in _on_debug_clicked: {e}")
+            import traceback
+            traceback.print_exc()
+            try:
+                from qgis.PyQt.QtWidgets import QMessageBox
+                QMessageBox.critical(self, "Debug Error", f"Debug functionality error:\n{e}")
+            except:
+                print("DEBUG: Could not even show error message")
     
     def _on_checkbox_changed(self, control_name, state, main_dialog):
         """Handle checkbox state change and save to ini file."""
@@ -372,9 +500,9 @@ class RightPanel(QWidget):
             
             # Regenerate the HTML with the new library mode
             # This will pick up the current library_mode from get_library_mode()
-            if hasattr(self.main_dialog, 'initialize_openlayers_map'):
-                self.main_dialog.log_message("🔄 Regenerating map HTML with new library mode...")
-                self.main_dialog.initialize_openlayers_map(self.main_dialog.web_view)
+            if hasattr(self.main_dialog, 'reload_map_html_only'):
+                self.main_dialog.log_message("🔄 Regenerating map HTML with new library mode (HTML only)...")
+                self.main_dialog.reload_map_html_only()
             else:
                 print("DEBUG: initialize_openlayers_map method not found on main_dialog")
                 self.main_dialog.log_message("❌ Could not regenerate map HTML", level=Qgis.Warning)

@@ -7,6 +7,8 @@ for the Q2G QGIS Plugin.
 
 import traceback
 import os
+import sys
+import importlib.util
 from qgis.PyQt.QtCore import Qt
 from qgis.PyQt.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QFormLayout, QLineEdit, QPushButton, 
@@ -14,10 +16,26 @@ from qgis.PyQt.QtWidgets import (
 )
 from qgis.PyQt.QtGui import QIcon
 
-# Dynamic import using ImportManager (works with any folder name)
-from .import_manager import dynamic_import
+# Ensure we load modules from the same folder as this file
+_CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
+if _CURRENT_DIR not in sys.path:
+    sys.path.insert(0, _CURRENT_DIR)
 
-PostGISCredentialsManager = dynamic_import("postgis_credentials", "PostGISCredentialsManager")
+def _load_local_module(module_name):
+    """Load a module from the same directory as this file."""
+    module_file = os.path.join(_CURRENT_DIR, f"{module_name}.py")
+    if not os.path.exists(module_file):
+        raise ImportError(f"Module not found: {module_file}")
+    spec = importlib.util.spec_from_file_location(module_name, module_file)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"Could not load spec for: {module_file}")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+# Load PostGISCredentialsManager from local file
+_postgis_creds_module = _load_local_module("postgis_credentials")
+PostGISCredentialsManager = _postgis_creds_module.PostGISCredentialsManager
 
 
 class PostGISCredentialsDialog(QDialog):
@@ -27,7 +45,7 @@ class PostGISCredentialsDialog(QDialog):
             super().__init__(parent)
             self.setWindowTitle("PostGIS Credentials Manager")
             self.setMinimumSize(600, 400)
-            self.setWindowFlags(Qt.Window | Qt.WindowSystemMenuHint | Qt.WindowMinMaxButtonsHint | Qt.WindowCloseButtonHint)
+            self.setWindowFlags(Qt.WindowType.Window | Qt.WindowType.WindowSystemMenuHint | Qt.WindowType.WindowMinMaxButtonsHint | Qt.WindowType.WindowCloseButtonHint)
             
             # Initialize credentials manager
             self.credentials_manager = PostGISCredentialsManager()
@@ -87,7 +105,7 @@ class PostGISCredentialsDialog(QDialog):
             form_layout.addRow("Username:", self.username_input)
             
             self.password_input = QLineEdit()
-            self.password_input.setEchoMode(QLineEdit.Password)
+            self.password_input.setEchoMode(QLineEdit.EchoMode.Password)
             self.password_input.setPlaceholderText("Enter password")
             form_layout.addRow("Password:", self.password_input)
             
@@ -249,17 +267,17 @@ class PostGISCredentialsDialog(QDialog):
             for conn in connections:
                 display_text = f"{conn['database']}@{conn['host']}:{conn['port']} (User: {conn['user']})"
                 item = QListWidgetItem(display_text)
-                item.setData(Qt.UserRole, conn)  # Store connection data
+                item.setData(Qt.ItemDataRole.UserRole, conn)  # Store connection data
                 self.connections_list.addItem(item)
             
             if not connections:
                 item = QListWidgetItem("No saved connections found")
-                item.setFlags(Qt.NoItemFlags)  # Make it non-selectable
+                item.setFlags(Qt.ItemFlag.NoItemFlags)  # Make it non-selectable
                 self.connections_list.addItem(item)
         
         def load_connection_details(self, item):
             """Load connection details into the form when an item is clicked."""
-            conn_data = item.data(Qt.UserRole)
+            conn_data = item.data(Qt.ItemDataRole.UserRole)
             
             if conn_data:
                 self.host_input.setText(conn_data.get('host', ''))
@@ -277,7 +295,7 @@ class PostGISCredentialsDialog(QDialog):
                 QMessageBox.warning(self, "Selection Error", "Please select a connection to delete.")
                 return
             
-            conn_data = current_item.data(Qt.UserRole)
+            conn_data = current_item.data(Qt.ItemDataRole.UserRole)
             if not conn_data:
                 return
             
@@ -285,11 +303,11 @@ class PostGISCredentialsDialog(QDialog):
             reply = QMessageBox.question(
                 self, "Confirm Deletion", 
                 f"Are you sure you want to delete the connection for:\n{conn_data['database']}@{conn_data['host']}:{conn_data['port']}?",
-                QMessageBox.Yes | QMessageBox.No,
-                QMessageBox.No
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No
             )
             
-            if reply == QMessageBox.Yes:
+            if reply == QMessageBox.StandardButton.Yes:
                 success = self.credentials_manager.delete_credentials(
                     conn_data['database'], 
                     conn_data['host'], 

@@ -5,8 +5,8 @@ This module provides functionality for managing a master checkbox that controls
 the visibility of all layers in the map layers tree.
 """
 
-from PyQt5.QtCore import Qt
-from PyQt5.QtWidgets import QCheckBox
+from qgis.PyQt.QtCore import Qt
+from qgis.PyQt.QtWidgets import QCheckBox
 
 class MasterLayerVisibilityHandler:
     """
@@ -56,7 +56,7 @@ class MasterLayerVisibilityHandler:
         self.parent.added_layers_tree.blockSignals(True)
         
         try:
-            is_checked = state == Qt.Checked
+            is_checked = state == Qt.CheckState.Checked.value
             for i in range(self.parent.added_layers_tree.topLevelItemCount()):
                 item = self.parent.added_layers_tree.topLevelItem(i)
                 # Get the visibility checkbox widget in column 0
@@ -68,7 +68,7 @@ class MasterLayerVisibilityHandler:
                     checkbox.blockSignals(False)
                     
                     # Update layer visibility directly
-                    layer_id = item.data(0, Qt.UserRole)
+                    layer_id = item.data(0, Qt.ItemDataRole.UserRole)
                     self.parent.toggle_layer_visibility(layer_id, is_checked)
         finally:
             # Re-enable signals

@@ -1,5 +1,4 @@
-from PyQt5.QtWidgets import QWidget, QVBoxLayout
-from PyQt5.QtWebEngineWidgets import QWebEngineView
+from qgis.PyQt.QtWidgets import QWidget, QVBoxLayout, QWebEngineView
 
 class MapPanel(QWidget):
     def __init__(self, parent=None):

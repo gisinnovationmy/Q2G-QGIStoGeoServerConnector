@@ -3,6 +3,27 @@ Simple test for OpenLayers preview dialog
 Run this to test if the preview components are working.
 """
 
+import os
+import sys
+import importlib.util
+
+# Ensure we load modules from the same folder as this file
+_CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
+if _CURRENT_DIR not in sys.path:
+    sys.path.insert(0, _CURRENT_DIR)
+
+def _load_local_module(module_name):
+    """Load a module from the same directory as this file."""
+    module_file = os.path.join(_CURRENT_DIR, f"{module_name}.py")
+    if not os.path.exists(module_file):
+        raise ImportError(f"Module not found: {module_file}")
+    spec = importlib.util.spec_from_file_location(module_name, module_file)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"Could not load spec for: {module_file}")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
 def test_preview_components():
     """Test if all preview components are available"""
     
@@ -11,17 +32,23 @@ def test_preview_components():
     
     # Test 1: WebEngine
     try:
-        from PyQt5.QtWebEngineWidgets import QWebEngineView
-        from PyQt5.QtWebChannel import QWebChannel
-        print("✅ WebEngine components: Available")
-    except ImportError as e:
-        print(f"❌ WebEngine components: Missing - {e}")
-        return False
+        # Try PyQt6 first (QGIS 3.28+)
+        from PyQt6.QtWebEngineWidgets import QWebEngineView
+        from PyQt6.QtWebChannel import QWebChannel
+        print("✅ WebEngine components: Available (PyQt6)")
+    except ImportError:
+        try:
+            # Fallback to PyQt5 (QGIS 3.16-3.26)
+            from PyQt5.QtWebEngineWidgets import QWebEngineView
+            from PyQt5.QtWebChannel import QWebChannel
+            print("✅ WebEngine components: Available (PyQt5)")
+        except ImportError as e:
+            print(f"❌ WebEngine components: Missing - {e}")
+            return False
     
     # Test 2: Panel modules
     try:
-        import os
-        base_dir = os.path.dirname(__file__)
+        base_dir = _CURRENT_DIR
         
         left_panel_path = os.path.join(base_dir, 'left_panel.py')
         right_panel_path = os.path.join(base_dir, 'right_panel.py')
@@ -47,19 +74,22 @@ def test_preview_components():
     
     # Test 3: Import modules
     try:
-        from .left_panel import LeftPanel
+        _lp = _load_local_module("left_panel")
+        LeftPanel = _lp.LeftPanel
         print("✅ LeftPanel import: Success")
     except ImportError as e:
         print(f"❌ LeftPanel import: Failed - {e}")
     
     try:
-        from .right_panel import RightPanel
+        _rp = _load_local_module("right_panel")
+        RightPanel = _rp.RightPanel
         print("✅ RightPanel import: Success")
     except ImportError as e:
         print(f"❌ RightPanel import: Failed - {e}")
     
     try:
-        from .preview import PreviewDialog
+        _pv = _load_local_module("preview")
+        PreviewDialog = _pv.PreviewDialog
         print("✅ PreviewDialog import: Success")
     except ImportError as e:
         print(f"❌ PreviewDialog import: Failed - {e}")
@@ -81,8 +111,11 @@ def create_minimal_preview_test():
     print("\n🧪 Creating Minimal Preview Test...")
     
     try:
-        from PyQt5.QtWidgets import QDialog, QVBoxLayout, QLabel
-        from PyQt5.QtWebEngineWidgets import QWebEngineView
+        from qgis.PyQt.QtWidgets import QDialog, QVBoxLayout, QLabel
+        try:
+            from PyQt6.QtWebEngineWidgets import QWebEngineView
+        except ImportError:
+            from PyQt5.QtWebEngineWidgets import QWebEngineView
         
         class MinimalPreview(QDialog):
             def __init__(self):

@@ -1,19 +1,33 @@
 import os
-from PyQt5.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton, 
-    QListWidget, QAbstractItemView, QTreeWidget, QTreeWidgetItem, QCheckBox,
-    QSlider, QScrollArea, QRadioButton, QButtonGroup, QGroupBox, QGridLayout
+import sys
+import importlib.util
+from qgis.PyQt.QtWidgets import (
+    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QListWidget, 
+    QPushButton, QTreeWidget, QCheckBox, QRadioButton, QButtonGroup, 
+    QAbstractItemView, QListWidgetItem, QScrollArea, QGroupBox
 )
-from PyQt5.QtCore import Qt
-from PyQt5.QtGui import QIcon
+from qgis.PyQt.QtCore import Qt
+from qgis.PyQt.QtGui import QIcon
 
-try:
-    from .draggable_layers_tree import DraggableLayersTree
-except ImportError:
-    try:
-        from draggable_layers_tree import DraggableLayersTree
-    except ImportError:
-        DraggableLayersTree = QTreeWidget
+# Ensure we load modules from the same folder as this file
+_CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
+if _CURRENT_DIR not in sys.path:
+    sys.path.insert(0, _CURRENT_DIR)
+
+def _load_local_module(module_name):
+    """Load a module from the same directory as this file."""
+    module_file = os.path.join(_CURRENT_DIR, f"{module_name}.py")
+    if not os.path.exists(module_file):
+        raise ImportError(f"Module not found: {module_file}")
+    spec = importlib.util.spec_from_file_location(module_name, module_file)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"Could not load spec for: {module_file}")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+_dtw = _load_local_module("draggable_tree_widget")
+DraggableTreeWidget = _dtw.DraggableTreeWidget
 
 class LeftPanel(QWidget):
     def __init__(self, plugin_dir, is_dark_theme, parent=None):
@@ -31,8 +45,8 @@ class LeftPanel(QWidget):
         # Create scroll area
         scroll_area = QScrollArea()
         scroll_area.setWidgetResizable(True)
-        scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
-        scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         # Add outline style (no border that takes space)
         scroll_area.setStyleSheet("""
             QScrollArea {
@@ -66,10 +80,10 @@ class LeftPanel(QWidget):
 
         self.header_label = QLabel("Available Layers (Click to sort: A-Z)")
         self.header_label.setStyleSheet("QLabel { background-color : lightgray; padding: 5px; font-weight: bold; }")
-        self.header_label.setCursor(Qt.PointingHandCursor)
+        self.header_label.setCursor(Qt.CursorShape.PointingHandCursor)
         
         self.layers_list = QListWidget()
-        self.layers_list.setSelectionMode(QAbstractItemView.ExtendedSelection)
+        self.layers_list.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
         # Make the layers list 20% higher
         self.layers_list.setMinimumHeight(int(self.layers_list.sizeHint().height() * 1.2))
 
@@ -110,31 +124,26 @@ class LeftPanel(QWidget):
         btn_layout_row2.addWidget(self.load_state_button, 1)
         btn_layout_row2.addWidget(self.clear_button, 1)
 
-        self.added_layers_tree = DraggableLayersTree()
+        self.added_layers_tree = DraggableTreeWidget()
         self.added_layers_tree.setHeaderLabels(["Visibility", "Layer Name", "Transparency"])
         self.added_layers_tree.setColumnWidth(0, 60)
         self.added_layers_tree.setColumnWidth(1, 180)
         # Set header height to ensure it's visible
         self.added_layers_tree.header().setMinimumHeight(24)
         # Prevent scrollbars and allow proper resizing
-        self.added_layers_tree.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
-        self.added_layers_tree.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self.added_layers_tree.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        self.added_layers_tree.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         # Set a reasonable minimum height for the layers tree
         self.added_layers_tree.setMinimumHeight(250)
+        # Drag-and-drop is already configured in DraggableTreeWidget
 
         reorder_layout = QHBoxLayout()
         self.move_up_btn = QPushButton("▲ Move Up")
         self.move_up_btn.setMinimumHeight(32)
-        self.move_to_top_btn = QPushButton("⬆ Top")
-        self.move_to_top_btn.setMinimumHeight(32)
         self.move_down_btn = QPushButton("▼ Move Down")
         self.move_down_btn.setMinimumHeight(32)
-        self.move_to_bottom_btn = QPushButton("⬇ Bottom")
-        self.move_to_bottom_btn.setMinimumHeight(32)
         reorder_layout.addWidget(self.move_up_btn, 1)
-        reorder_layout.addWidget(self.move_to_top_btn, 1)
         reorder_layout.addWidget(self.move_down_btn, 1)
-        reorder_layout.addWidget(self.move_to_bottom_btn, 1)
 
         self.zoom_btn = QPushButton("Zoom to Layer")
         self.zoom_btn.setMinimumHeight(32)
@@ -218,15 +227,9 @@ class LeftPanel(QWidget):
         self.clear_button.clicked.connect(main_dialog.clear_openlayers_map)
         
         self.added_layers_tree.itemDoubleClicked.connect(main_dialog.on_added_layer_double_clicked)
-        self.move_to_top_btn.clicked.connect(main_dialog.move_layer_to_top)
         self.move_up_btn.clicked.connect(main_dialog.move_layer_up)
         self.move_down_btn.clicked.connect(main_dialog.move_layer_down)
-        self.move_to_bottom_btn.clicked.connect(main_dialog.move_layer_to_bottom)
         self.zoom_btn.clicked.connect(main_dialog.zoom_to_selected_layer)
-        
-        # Connect drag-and-drop reordering signal if available
-        if hasattr(self.added_layers_tree, 'layers_reordered'):
-            self.added_layers_tree.layers_reordered.connect(main_dialog.on_layers_reordered_by_drag)
         
         # Connect base map mode radio buttons
         self.rb_base_none.toggled.connect(main_dialog._on_base_map_mode_changed)
@@ -241,6 +244,8 @@ class LeftPanel(QWidget):
         # Connect tree item changes to update checkbox state (when visibility/selection changes)
         self.added_layers_tree.itemSelectionChanged.connect(main_dialog.update_select_all_checkbox_state)
         self.added_layers_tree.itemChanged.connect(main_dialog.update_select_all_checkbox_state)
+        # Connect drag-and-drop reordering to refresh layer order in map
+        self.added_layers_tree.items_reordered.connect(main_dialog._on_layers_reordered)
 
     def set_controls_enabled(self, enabled):
         """Enable or disable controls, typically during loading."""
@@ -259,7 +264,7 @@ class LeftPanel(QWidget):
         """Add a single layer to the available layers list."""
         name = layer_data.get('name', 'Unnamed')
         item = QListWidgetItem(name)
-        item.setData(Qt.UserRole, layer_data)
+        item.setData(Qt.ItemDataRole.UserRole, layer_data)
         self.layers_list.addItem(item)
 
     def filter_layers(self, text, all_layers):

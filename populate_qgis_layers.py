@@ -4,11 +4,35 @@ Handles populating the QGIS layers tree widget with layers from the current proj
 Extracted from main.py for better code organization and maintainability.
 """
 
+import os
+import sys
+import importlib.util
+
 from qgis.core import QgsProject, QgsVectorLayer, QgsRasterLayer, Qgis, QgsLayerTreeGroup
 from qgis.PyQt.QtWidgets import QTreeWidgetItem, QPushButton, QHeaderView
 from qgis.PyQt.QtCore import Qt, QSize
 from qgis.PyQt.QtGui import QIcon, QPixmap
-from .layer_format_detector import get_layer_provider_info
+
+# Ensure we load modules from the same folder as this file
+_CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
+if _CURRENT_DIR not in sys.path:
+    sys.path.insert(0, _CURRENT_DIR)
+
+def _load_local_module(module_name):
+    """Load a module from the same directory as this file."""
+    module_file = os.path.join(_CURRENT_DIR, f"{module_name}.py")
+    if not os.path.exists(module_file):
+        raise ImportError(f"Module not found: {module_file}")
+    spec = importlib.util.spec_from_file_location(module_name, module_file)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"Could not load spec for: {module_file}")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+# Load local modules
+_lfd = _load_local_module("layer_format_detector")
+get_layer_provider_info = _lfd.get_layer_provider_info
 
 
 class QGISLayersPopulator:
@@ -24,101 +48,225 @@ class QGISLayersPopulator:
         self.main = main_instance
     
     def populate_qgis_layers(self):
-        """Populate the QGIS layers tree widget with layers from the current project."""
+        """Populate the QGIS layers tree widget with layers from the current project (flat list, no groups)."""
         self._clear_tree_widget()
         self._setup_header_columns()
         
         root = QgsProject.instance().layerTreeRoot()
+        # Populate layers in a flat list - extract all layers from groups, no group headers
+        self._populate_layers_flat(root)
         
-        # Debug: Check QGIS layer tree structure
-        self.main.log_message(f"DEBUG: QGIS layer tree root has {len(root.children())} children")
-        for i, child in enumerate(root.children()):
-            if isinstance(child, QgsLayerTreeGroup):
-                self.main.log_message(f"  Child {i}: Group '{child.name()}' with {len(child.children())} children")
-            else:
-                layer = child.layer()
-                if layer:
-                    self.main.log_message(f"  Child {i}: Layer '{layer.name()}'")
-        
-        # Recursively populate groups and layers
-        self._populate_node(root, parent_item=None, path="")
-        
-        # Connect all group name change signals
-        self._connect_layer_tree_signals(root, path="")
-        
-        # Expand all groups to show layers
-        self._expand_all_groups()
-        
-        # Debug: Print tree structure
-        self._debug_print_tree_structure()
-        
-        self.main.log_message(f"✓ Tree populated with groups and layers")
+        # Connect to layer tree changes
+        self._connect_layer_tree_signals(root)
     
+    def _save_expanded_state(self):
+        """
+        Save which groups are currently expanded.
+        
+        Returns:
+            set: Set of group names that are expanded
+        """
+        expanded_groups = set()
+        for i in range(self.main.qgis_layers_tree.topLevelItemCount()):
+            item = self.main.qgis_layers_tree.topLevelItem(i)
+            self._collect_expanded_items(item, expanded_groups)
+        return expanded_groups
+    
+    def _collect_expanded_items(self, item, expanded_groups, prefix=""):
+        """
+        Recursively collect expanded group names.
+        
+        Args:
+            item: Current tree item
+            expanded_groups: Set to store expanded group names
+            prefix: Current path prefix for nested groups
+        """
+        if item and item.isExpanded():
+            # Check if this is a group (has no layer data)
+            if item.data(0, Qt.ItemDataRole.UserRole) is None and item.data(0, Qt.ItemDataRole.UserRole + 3):
+                group_name = f"{prefix}/{item.text(0)}" if prefix else item.text(0)
+                expanded_groups.add(group_name)
+                # Recursively check children
+                for i in range(item.childCount()):
+                    child = item.child(i)
+                    self._collect_expanded_items(child, expanded_groups, group_name)
+    
+    def _restore_expanded_state(self, expanded_groups):
+        """
+        Restore the expand/collapse state of groups.
+        
+        Args:
+            expanded_groups: Set of group names that should be expanded
+        """
+        for i in range(self.main.qgis_layers_tree.topLevelItemCount()):
+            item = self.main.qgis_layers_tree.topLevelItem(i)
+            self._restore_item_state(item, expanded_groups, "")
+    
+    def _restore_item_state(self, item, expanded_groups, prefix=""):
+        """
+        Recursively restore expand/collapse state for items.
+        
+        Args:
+            item: Current tree item
+            expanded_groups: Set of group names that should be expanded
+            prefix: Current path prefix for nested groups
+        """
+        if item:
+            # Check if this is a group
+            if item.data(0, Qt.ItemDataRole.UserRole) is None and item.data(0, Qt.ItemDataRole.UserRole + 3):
+                group_name = f"{prefix}/{item.text(0)}" if prefix else item.text(0)
+                # Restore expanded state
+                if group_name in expanded_groups:
+                    item.setExpanded(True)
+                else:
+                    item.setExpanded(False)
+                # Recursively restore children
+                for i in range(item.childCount()):
+                    child = item.child(i)
+                    self._restore_item_state(child, expanded_groups, group_name)
+
+    def _populate_layers_flat(self, node):
+        """
+        Populate layers in a flat list (no groups).
+        Recursively extracts all layers from all groups.
+        
+        Args:
+            node: Layer tree node to traverse
+        """
+        for child in node.children():
+            if hasattr(child, 'layer') and child.layer():
+                # This is a layer node
+                layer = child.layer()
+                if isinstance(layer, (QgsVectorLayer, QgsRasterLayer)):
+                    if self._should_skip_layer(layer):
+                        continue
+                    
+                    # Create layer item at root level (no parent_item, no parent_group)
+                    item = self._create_layer_item(layer, "", None)
+                    self._setup_layer_buttons(item, layer)
+                    self._connect_layer_signals(layer, item)
+                    self._set_layer_format_info(item, layer)
+            else:
+                # This is a group node - recursively extract layers from it
+                self._populate_layers_flat(child)
+    
+    def _populate_layers_with_groups(self, node, parent_item=None, parent_group=""):
+        """
+        Recursively populate layers, tracking group hierarchy with collapsible groups.
+        
+        Args:
+            node: Layer tree node to traverse
+            parent_item: Parent QTreeWidgetItem (None for root)
+            parent_group: Name of the parent group (empty string for root level)
+        """
+        for child in node.children():
+            if hasattr(child, 'layer') and child.layer():
+                # This is a layer node
+                layer = child.layer()
+                if isinstance(layer, (QgsVectorLayer, QgsRasterLayer)):
+                    if self._should_skip_layer(layer):
+                        continue
+                    
+                    item = self._create_layer_item(layer, parent_group, parent_item)
+                    self._setup_layer_buttons(item, layer)
+                    self._connect_layer_signals(layer, item)
+                    self._set_layer_format_info(item, layer)
+            else:
+                # This is a group node - create a collapsible group header
+                group_name = child.name() if hasattr(child, 'name') else "Group"
+                new_parent_group = f"{parent_group}/{group_name}" if parent_group else group_name
+                
+                # Create a group item
+                group_item = self._create_group_item(group_name, parent_item, child, new_parent_group)
+                
+                # Recursively populate layers under this group
+                self._populate_layers_with_groups(child, group_item, new_parent_group)
     
     def _clear_tree_widget(self):
         """Clear the tree widget and reset mappings."""
         self.main.qgis_layers_tree.clear()
         self.main.layer_to_item_map.clear()
-        self.main.group_to_item_map.clear()
-        if hasattr(self.main, 'group_node_to_item_map'):
-            self.main.group_node_to_item_map.clear()
         self.main.select_all_qgis_layers_checkbox.setChecked(False)
     
-    def _populate_node(self, node, parent_item=None, path=""):
+    def _update_all_group_states(self):
         """
-        Recursively populate the tree widget with groups and layers from a layer tree node.
+        Update all group checkbox states based on their children's states.
+        This implements tri-state checkbox logic after the tree is populated.
+        """
+        # Block signals during batch update
+        self.main.qgis_layers_tree.blockSignals(True)
+        
+        # Process all top-level items
+        for i in range(self.main.qgis_layers_tree.topLevelItemCount()):
+            item = self.main.qgis_layers_tree.topLevelItem(i)
+            self._update_group_state_recursive(item)
+        
+        self.main.qgis_layers_tree.blockSignals(False)
+    
+    def _update_group_state_recursive(self, item):
+        """
+        Recursively update group checkbox states from bottom up.
         
         Args:
-            node: Current layer tree node
-            parent_item: Parent QTreeWidgetItem (None for root)
-            path: Full path of the current node
+            item: Tree widget item to process
         """
-        children = node.children()
-        self.main.log_message(f"DEBUG _populate_node: Processing node with {len(children)} children (parent_item={parent_item.text(0) if parent_item else 'None'})")
+        if not item:
+            return
         
-        for i, child in enumerate(children):
-            self.main.log_message(f"  DEBUG child {i}: type={type(child).__name__}, is_group={isinstance(child, QgsLayerTreeGroup)}")
+        # Check if this is a group
+        is_group = item.data(0, Qt.ItemDataRole.UserRole) is None and item.data(0, Qt.ItemDataRole.UserRole + 3)
+        
+        if is_group:
+            # First, recursively update all children (bottom-up approach)
+            for i in range(item.childCount()):
+                child = item.child(i)
+                self._update_group_state_recursive(child)
             
-            if isinstance(child, QgsLayerTreeGroup):
-                # This is a group - create a group item and recurse
-                child_path = f"{path}/{child.name()}" if path else child.name()
-                group_item = self._create_group_item(child.name(), parent_item=parent_item, group_node=child, full_path=child_path)
-                self.main.log_message(f"✓ Created group: {child.name()} with {len(child.children())} children")
-                
-                # Recursively populate the group with its children
-                self._populate_node(child, parent_item=group_item, path=child_path)
+            # Now calculate this group's state based on children
+            checked_count = 0
+            unchecked_count = 0
+            partial_count = 0
+            total_children = item.childCount()
+            
+            for i in range(total_children):
+                child = item.child(i)
+                if child:
+                    state = child.checkState(0)
+                    if state == Qt.CheckState.Checked.value:
+                        checked_count += 1
+                    elif state == Qt.CheckState.Unchecked.value:
+                        unchecked_count += 1
+                    else:  # PartiallyChecked
+                        partial_count += 1
+            
+            # Set group state
+            if total_children == 0:
+                # Empty group - leave as is
+                pass
+            elif checked_count == total_children:
+                item.setCheckState(0, Qt.CheckState.Checked)
+            elif unchecked_count == total_children:
+                item.setCheckState(0, Qt.CheckState.Unchecked)
             else:
-                # This is a layer node - create a layer item
-                layer = child.layer()
-                if layer and isinstance(layer, (QgsVectorLayer, QgsRasterLayer)):
-                    if self._should_skip_layer(layer):
-                        continue
-                    
-                    item = self._create_layer_item_with_parent(layer, parent_item)
-                    parent_name = parent_item.text(0) if parent_item else 'root'
-                    self.main.log_message(f"✓ Created layer: {layer.name()} under parent: {parent_name}")
-                    self._setup_layer_buttons(item, layer)
-                    self._connect_layer_signals(layer, item)
-                    self._set_layer_format_info(item, layer)
+                item.setCheckState(0, Qt.CheckState.PartiallyChecked)
     
     def _get_all_layers_recursive(self, node):
         """
-        Recursively get all layers from the layer tree, skipping groups entirely.
-        Only returns actual layer objects, not group nodes.
+        Recursively get all layers from the layer tree, including those in groups.
         
         Args:
             node: Layer tree node to traverse
             
         Returns:
-            list: All layer objects found in the tree (from all levels, groups ignored)
+            list: All layer objects found in the tree
         """
         layers = []
         for child in node.children():
             if hasattr(child, 'layer') and child.layer():
-                # This is a layer node - add it
+                # This is a layer node
                 layers.append(child.layer())
             else:
-                # This is a group node - skip it but recurse into its children
+                # This might be a group node, recurse into it
                 layers.extend(self._get_all_layers_recursive(child))
         return layers
     
@@ -145,11 +293,11 @@ class QGISLayersPopulator:
     def _setup_header_columns(self):
         """Setup the header column resize modes."""
         header = self.main.qgis_layers_tree.header()
-        header.setSectionResizeMode(0, QHeaderView.Stretch)
-        header.setSectionResizeMode(1, QHeaderView.ResizeToContents)
-        header.setSectionResizeMode(2, QHeaderView.ResizeToContents)
-        header.setSectionResizeMode(3, QHeaderView.ResizeToContents)
-        header.setSectionResizeMode(4, QHeaderView.ResizeToContents)
+        header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        header.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(4, QHeaderView.ResizeMode.ResizeToContents)
     
     def _should_skip_layer(self, layer):
         """
@@ -220,22 +368,21 @@ class QGISLayersPopulator:
         font.setBold(True)
         group_item.setFont(0, font)
         
-        # Make group item checkable to control all children
-        group_item.setFlags(group_item.flags() | Qt.ItemIsUserCheckable)
+        # Make group item checkable with tri-state support
+        group_item.setFlags(group_item.flags() | Qt.ItemFlag.ItemIsUserCheckable | Qt.ItemFlag.ItemIsAutoTristate)
         
-        # Set checkbox state based on group's visibility in QGIS
-        # Match the exact state of the group in QGIS layer tree
+        # Set initial checkbox state based on group's visibility in QGIS
+        # The actual tri-state will be calculated after all children are added
         if group_node:
-            # Use the group node's own visibility state
             is_visible = group_node.itemVisibilityChecked()
-            check_state = Qt.Checked if is_visible else Qt.Unchecked
+            check_state = Qt.CheckState.Checked if is_visible else Qt.CheckState.Unchecked
         else:
-            check_state = Qt.Unchecked
+            check_state = Qt.CheckState.Unchecked
         group_item.setCheckState(0, check_state)
         
         # Mark as a group (no layer object, but is checkable)
-        group_item.setData(0, Qt.UserRole, None)  # No layer object
-        group_item.setData(0, Qt.UserRole + 3, True)  # Mark as group
+        group_item.setData(0, Qt.ItemDataRole.UserRole, None)  # No layer object
+        group_item.setData(0, Qt.ItemDataRole.UserRole + 3, True)  # Mark as group
         
         # Store group mapping for name change updates
         if full_path:
@@ -353,70 +500,41 @@ class QGISLayersPopulator:
                 child_path = f"{path}/{child.name()}" if path else child.name()
                 self._connect_layer_tree_signals(child, child_path)
 
-    def _create_layer_item(self, layer):
+    def _create_layer_item(self, layer, parent_group="", parent_item=None):
         """
         Create a tree widget item for a layer.
         
         Args:
             layer: QGIS layer object
+            parent_group: Name of the parent group (empty string for root level)
+            parent_item: Parent QTreeWidgetItem (None for root)
             
         Returns:
             QTreeWidgetItem: Created tree widget item
         """
-        # Always create at root level (no parent items, no groups)
-        item = QTreeWidgetItem(self.main.qgis_layers_tree)
-        
-        # Set item flags to be checkable
-        item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
-        
-        # Check if layer is visible in QGIS and set checkbox state accordingly
-        is_visible = self._is_layer_visible(layer)
-        check_state = Qt.Checked if is_visible else Qt.Unchecked
-        item.setCheckState(0, check_state)
-        
-        # Store the layer object in the item's data role for later retrieval
-        item.setData(0, Qt.UserRole, layer)
-        item.setData(0, Qt.UserRole + 1, layer.id())  # Store layer ID as well
-        
-        # Display layer name only (no group prefix)
-        item.setText(0, layer.name())
-        
-        # Try to set layer icon from renderer
-        self._set_layer_icon(item, layer)
-        
-        return item
-    
-    def _create_layer_item_with_parent(self, layer, parent_item=None):
-        """
-        Create a tree widget item for a layer with optional parent item.
-        
-        Args:
-            layer: QGIS layer object
-            parent_item: Parent QTreeWidgetItem (None for root level)
-            
-        Returns:
-            QTreeWidgetItem: Created tree widget item
-        """
-        # Create item with parent if provided, otherwise at root level
         if parent_item is None:
             item = QTreeWidgetItem(self.main.qgis_layers_tree)
         else:
             item = QTreeWidgetItem(parent_item)
         
         # Set item flags to be checkable
-        item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
+        item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
         
         # Check if layer is visible in QGIS and set checkbox state accordingly
         is_visible = self._is_layer_visible(layer)
-        check_state = Qt.Checked if is_visible else Qt.Unchecked
+        check_state = Qt.CheckState.Checked if is_visible else Qt.CheckState.Unchecked
         item.setCheckState(0, check_state)
         
         # Store the layer object in the item's data role for later retrieval
-        item.setData(0, Qt.UserRole, layer)
-        item.setData(0, Qt.UserRole + 1, layer.id())  # Store layer ID as well
+        item.setData(0, Qt.ItemDataRole.UserRole, layer)
+        item.setData(0, Qt.ItemDataRole.UserRole + 1, layer.id())  # Store layer ID as well
         
-        # Display layer name only (no group prefix)
+        # Display layer name
         item.setText(0, layer.name())
+        
+        # Store the group name for reference if in a group
+        if parent_group:
+            item.setData(0, Qt.ItemDataRole.UserRole + 2, parent_group)
         
         # Try to set layer icon from renderer
         self._set_layer_icon(item, layer)
@@ -458,21 +576,21 @@ class QGISLayersPopulator:
         # Add extents button
         btn_extents = QPushButton("...")
         btn_extents.setToolTip("Show layer extents")
-        btn_extents.setFocusPolicy(Qt.NoFocus)  # Prevent focus stealing
+        btn_extents.setFocusPolicy(Qt.FocusPolicy.NoFocus)  # Prevent focus stealing
         btn_extents.clicked.connect(lambda checked, l=layer, i=item: self._on_button_clicked_preserve_selection(l, i, self.main._on_show_extents_clicked))
         self.main.qgis_layers_tree.setItemWidget(item, 2, btn_extents)
 
         # Add SLD button (applies to both vectors and rasters)
         btn_show = QPushButton("...")
         btn_show.setToolTip("Show SLD for this layer")
-        btn_show.setFocusPolicy(Qt.NoFocus)  # Prevent focus stealing
+        btn_show.setFocusPolicy(Qt.FocusPolicy.NoFocus)  # Prevent focus stealing
         btn_show.clicked.connect(lambda checked, l=layer, i=item: self._on_button_clicked_preserve_selection(l, i, self.main._on_show_sld_clicked))
         self.main.qgis_layers_tree.setItemWidget(item, 3, btn_show)
         
         # Add Upload SLD button
         btn_upload_sld = QPushButton("Upload")
         btn_upload_sld.setToolTip("Upload a custom SLD file for this layer")
-        btn_upload_sld.setFocusPolicy(Qt.NoFocus)  # Prevent focus stealing
+        btn_upload_sld.setFocusPolicy(Qt.FocusPolicy.NoFocus)  # Prevent focus stealing
         btn_upload_sld.clicked.connect(lambda checked, l=layer, i=item: self._on_button_clicked_preserve_selection(l, i, self.main._on_upload_sld_clicked))
         self.main.qgis_layers_tree.setItemWidget(item, 4, btn_upload_sld)
     
@@ -548,7 +666,9 @@ class QGISLayersPopulator:
                 
                 # Also update the layer icon when name changes (might indicate style change)
                 try:
-                    self._set_layer_icon(item, layer)
+                    icon = self._create_layer_icon(layer)
+                    if icon:
+                        item.setIcon(0, icon)
                 except:
                     pass
                     
@@ -616,37 +736,3 @@ class QGISLayersPopulator:
         # Set format in the tree widget for each layer
         format_info = get_layer_provider_info(layer)
         item.setText(1, format_info.get('native_format', 'Unknown'))
-    
-    def _expand_all_groups(self):
-        """Expand all group items in the tree to show their layers."""
-        root = self.main.qgis_layers_tree.invisibleRootItem()
-        for i in range(root.childCount()):
-            item = root.child(i)
-            is_group = item.data(0, Qt.UserRole + 3)
-            if is_group:
-                self.main.qgis_layers_tree.expandItem(item)
-                self._expand_nested_groups(item)
-    
-    def _expand_nested_groups(self, parent_item):
-        """Recursively expand nested group items."""
-        for i in range(parent_item.childCount()):
-            child = parent_item.child(i)
-            is_group = child.data(0, Qt.UserRole + 3)
-            if is_group:
-                self.main.qgis_layers_tree.expandItem(child)
-                self._expand_nested_groups(child)
-    
-    def _debug_print_tree_structure(self):
-        """Debug method to print the tree structure."""
-        root = self.main.qgis_layers_tree.invisibleRootItem()
-        self.main.log_message(f"DEBUG: Tree has {root.childCount()} root items")
-        for i in range(root.childCount()):
-            item = root.child(i)
-            is_group = item.data(0, Qt.UserRole + 3)
-            layer = item.data(0, Qt.UserRole)
-            self.main.log_message(f"  Item {i}: '{item.text(0)}' (is_group={is_group}, layer={layer is not None}, children={item.childCount()})")
-            for j in range(item.childCount()):
-                child = item.child(j)
-                child_layer = child.data(0, Qt.UserRole)
-                child_is_group = child.data(0, Qt.UserRole + 3)
-                self.main.log_message(f"    Child {j}: '{child.text(0)}' (is_group={child_is_group}, layer={child_layer is not None})")

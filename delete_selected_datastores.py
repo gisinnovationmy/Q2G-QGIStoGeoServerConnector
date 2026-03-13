@@ -115,11 +115,11 @@ class DatastoreDeletionManager:
             f"Are you sure you want to delete the following {len(store_names)} store(s)?\n\n"
             f"{', '.join(store_names)}\n\n"
             "This will also delete all associated layers. This action cannot be undone.",
-            QMessageBox.Yes | QMessageBox.No, 
-            QMessageBox.No
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, 
+            QMessageBox.StandardButton.No
         )
         
-        return reply == QMessageBox.Yes
+        return reply == QMessageBox.StandardButton.Yes
     
     def _execute_datastore_deletion(self, selected_items, workspace, url, username, password):
         """

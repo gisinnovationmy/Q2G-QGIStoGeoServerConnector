@@ -4,7 +4,27 @@ Groups layers by source directory/file to avoid duplicate uploads.
 Handles batch uploads for layers from the same source.
 """
 
+import os
+import sys
+import importlib.util
 from collections import defaultdict
+
+# Ensure we load modules from the same folder as this file
+_CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
+if _CURRENT_DIR not in sys.path:
+    sys.path.insert(0, _CURRENT_DIR)
+
+def _load_local_module(module_name):
+    """Load a module from the same directory as this file."""
+    module_file = os.path.join(_CURRENT_DIR, f"{module_name}.py")
+    if not os.path.exists(module_file):
+        raise ImportError(f"Module not found: {module_file}")
+    spec = importlib.util.spec_from_file_location(module_name, module_file)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"Could not load spec for: {module_file}")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 class UploadBatchHandler:
@@ -30,7 +50,8 @@ class UploadBatchHandler:
         Returns:
             dict: Mapping of source_path -> list of (layer, layer_name, upload_method, native_format)
         """
-        from .layer_format_detector import get_layer_provider_info
+        _lfd = _load_local_module("layer_format_detector")
+        get_layer_provider_info = _lfd.get_layer_provider_info
         
         source_groups = defaultdict(list)
         

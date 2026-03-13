@@ -73,11 +73,11 @@ class CacheResetManager:
             self.main, 
             "Confirm Cache Reset", 
             "This will delete ALL cached tiles for every layer. This action cannot be undone. Continue?",
-            QMessageBox.Yes | QMessageBox.No, 
-            QMessageBox.No
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, 
+            QMessageBox.StandardButton.No
         )
         
-        return reply == QMessageBox.Yes
+        return reply == QMessageBox.StandardButton.Yes
     
     def _execute_cache_reset(self, url, username, password):
         """

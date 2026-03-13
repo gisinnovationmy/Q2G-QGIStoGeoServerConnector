@@ -1,11 +1,11 @@
 import os
-from PyQt5.QtWidgets import (
+from qgis.PyQt.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QListWidget, 
     QPushButton, QTreeWidget, QCheckBox, QRadioButton, QButtonGroup, 
     QAbstractItemView, QListWidgetItem
 )
-from PyQt5.QtCore import Qt
-from PyQt5.QtGui import QIcon
+from qgis.PyQt.QtCore import Qt
+from qgis.PyQt.QtGui import QIcon
 
 class LeftPanel(QWidget):
     def __init__(self, plugin_dir, is_dark_theme, parent=None):
@@ -19,10 +19,10 @@ class LeftPanel(QWidget):
 
         self.header_label = QLabel("Available Layers (Click to sort: A-Z)")
         self.header_label.setStyleSheet("QLabel { background-color : lightgray; padding: 5px; font-weight: bold; }")
-        self.header_label.setCursor(Qt.PointingHandCursor)
+        self.header_label.setCursor(Qt.CursorShape.PointingHandCursor)
         
         self.layers_list = QListWidget()
-        self.layers_list.setSelectionMode(QAbstractItemView.ExtendedSelection)
+        self.layers_list.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
         
         # Search box below the layers list
         self.search_box = QLineEdit()
@@ -67,8 +67,8 @@ class LeftPanel(QWidget):
         self.added_layers_tree.setColumnWidth(0, 60)
         self.added_layers_tree.setColumnWidth(1, 180)
         # Prevent scrollbars and allow proper resizing
-        self.added_layers_tree.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
-        self.added_layers_tree.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self.added_layers_tree.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        self.added_layers_tree.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         self.added_layers_tree.setMinimumHeight(100)
 
         reorder_layout = QHBoxLayout()
@@ -153,7 +153,7 @@ class LeftPanel(QWidget):
         """Add a single layer to the available layers list."""
         name = layer_data.get('name', 'Unnamed')
         item = QListWidgetItem(name)
-        item.setData(Qt.UserRole, layer_data)
+        item.setData(Qt.ItemDataRole.UserRole, layer_data)
         self.layers_list.addItem(item)
 
     def filter_layers(self, text, all_layers):

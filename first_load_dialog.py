@@ -4,15 +4,57 @@ Shows important setup information on first plugin load
 """
 
 import os
+import sys
 import configparser
-from PyQt5.QtWidgets import (
+import importlib.util
+from qgis.PyQt.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, 
     QCheckBox, QScrollArea, QWidget, QMessageBox
 )
-from PyQt5.QtCore import Qt, QSize
-from PyQt5.QtGui import QFont, QIcon
-from PyQt5.QtCore import QUrl
-from PyQt5.QtGui import QDesktopServices
+from qgis.PyQt.QtCore import Qt, QSize
+from qgis.PyQt.QtGui import QFont, QIcon
+from qgis.PyQt.QtCore import QUrl
+from qgis.PyQt.QtGui import QDesktopServices
+
+# Ensure we load modules from the same folder as this file
+# Handle case when running via exec() where __file__ may point to non-existent path
+_CURRENT_DIR = None
+try:
+    _candidate = os.path.dirname(os.path.abspath(__file__))
+    if os.path.isdir(_candidate) and os.path.exists(os.path.join(_candidate, 'first_load_dialog.py')):
+        _CURRENT_DIR = _candidate
+except NameError:
+    pass
+
+if _CURRENT_DIR is None:
+    # Try QGIS plugin path if available
+    try:
+        from qgis.core import QgsApplication
+        plugin_root = QgsApplication.pluginPath()
+        _candidate = os.path.join(plugin_root, "geoserverconnector")
+        if os.path.isdir(_candidate) and os.path.exists(os.path.join(_candidate, 'first_load_dialog.py')):
+            _CURRENT_DIR = _candidate
+    except Exception:
+        pass
+
+if _CURRENT_DIR is None:
+    # Final fallback: current working directory or home
+    _CURRENT_DIR = os.getcwd() if os.getcwd() else os.path.expanduser("~")
+
+if _CURRENT_DIR not in sys.path:
+    sys.path.insert(0, _CURRENT_DIR)
+
+def _load_local_module(module_name):
+    """Load a module from the same directory as this file."""
+    module_file = os.path.join(_CURRENT_DIR, f"{module_name}.py")
+    if not os.path.exists(module_file):
+        raise ImportError(f"Module not found: {module_file}")
+    spec = importlib.util.spec_from_file_location(module_name, module_file)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"Could not load spec for: {module_file}")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 class FirstLoadDialog(QDialog):
@@ -25,7 +67,7 @@ class FirstLoadDialog(QDialog):
         
         self.setWindowTitle("🌐 Welcome to GeoServerConnector")
         self.setGeometry(100, 100, 700, 550)
-        self.setWindowModality(Qt.WindowModal)
+        self.setWindowModality(Qt.WindowModality.WindowModal)
         self.setStyleSheet("""
             QDialog {
                 background-color: #f5f5f5;
@@ -79,17 +121,16 @@ class FirstLoadDialog(QDialog):
             "  - Auto-installed on first Preview use\n"
             "  - Requires internet connection (~50-100 MB)\n"
             "  - QGIS restart needed after installation\n\n"
-            "• OpenLayers & Cesium.js: Included locally"
+            "• OpenLayers: Included locally"
         ))
         
         content_layout.addWidget(self._create_section(
             "🔒 GeoServer CORS Configuration",
-            "CORS must be enabled for the Preview feature to work:\n\n"
-            "1. Enter GeoServer credentials in the plugin\n"
-            "2. Click 'Others' section\n"
-            "3. Click 'Enable CORS in GeoServer' button\n"
-            "4. Plugin will configure CORS automatically\n\n"
-            "⚠️ CORS is only needed for Preview feature"
+            "CORS (Cross-Origin Resource Sharing) is recommended for the Preview feature.\n\n"
+            "• Required for local/development testing\n"
+            "• Good practice to enable for production use\n"
+            "• Must be configured manually in GeoServer\n\n"
+            "See the Documentation for setup instructions."
         ))
         
         content_layout.addWidget(self._create_section(
@@ -114,7 +155,7 @@ class FirstLoadDialog(QDialog):
             "☐ GeoServer admin credentials\n"
             "☐ Network access to GeoServer\n"
             "☐ Internet connection (for PyQtWebEngine)\n"
-            "☐ CORS enabled on GeoServer (for Preview)"
+            "☐ CORS enabled on GeoServer (recommended for Preview)"
         ))
         
         content_layout.addWidget(self._create_section(
@@ -125,10 +166,9 @@ class FirstLoadDialog(QDialog):
             "• FAQ: Frequently asked questions"
         ))
         
-        content_layout.addStretch()
         content_widget.setLayout(content_layout)
         scroll.setWidget(content_widget)
-        layout.addWidget(scroll)
+        layout.addWidget(scroll, 1)  # Give scroll area stretch priority
         
         # Separator
         separator2 = QLabel("─" * 80)
@@ -178,14 +218,21 @@ class FirstLoadDialog(QDialog):
         return widget
     
     def open_documentation(self):
-        """Open documentation link"""
-        QMessageBox.information(
-            self,
-            "📚 Documentation",
-            "For complete documentation, visit:\n\n"
-            "Web Manual: Check the 'Before You Start' section\n\n"
-            "Or contact us at: mygis@gis.my"
-        )
+        """Open documentation dialog on the 'Before You Start' page"""
+        try:
+            _doc = _load_local_module("documentation")
+            DocumentationDialog = _doc.DocumentationDialog
+            doc_dialog = DocumentationDialog(self, self.plugin_dir)
+            # Set to "Getting Started" page (Before You Start)
+            doc_dialog.page_combo.setCurrentText("Getting Started")
+            doc_dialog.exec()
+        except Exception as e:
+            QMessageBox.warning(
+                self,
+                "📚 Documentation",
+                f"Could not open documentation:\n{str(e)}\n\n"
+                "Or contact us at: mygis@gis.my"
+            )
     
     def accept(self):
         """Handle OK button click"""
@@ -194,47 +241,25 @@ class FirstLoadDialog(QDialog):
         super().accept()
     
     def save_preference(self):
-        """Save 'do not show again' preference to INI file"""
-        if not self.controls_ini or not os.path.exists(self.controls_ini):
-            return
-        
+        """Save 'do not show again' preference using QgsSettings (persistent across sessions)"""
         try:
-            config = configparser.ConfigParser()
-            config.read(self.controls_ini)
-            
-            if not config.has_section('settings'):
-                config.add_section('settings')
-            
-            config.set('settings', 'show_first_load_dialog', 'False')
-            
-            with open(self.controls_ini, 'w') as f:
-                config.write(f)
+            from qgis.core import QgsSettings
+            settings = QgsSettings()
+            settings.setValue('geoserverconnector/show_first_load_dialog', False)
+            print(f"DEBUG: Saved show_first_load_dialog=False to QgsSettings")
         except Exception as e:
             print(f"Error saving preference: {e}")
 
 
 def should_show_first_load_dialog(plugin_dir):
-    """Check if first load dialog should be shown"""
-    controls_ini = os.path.join(plugin_dir, 'controls.ini')
-    
-    if not os.path.exists(controls_ini):
-        return True
-    
+    """Check if first load dialog should be shown using QgsSettings"""
     try:
-        config = configparser.ConfigParser()
-        config.read(controls_ini)
-        
-        if config.has_option('settings', 'show_first_load_dialog'):
-            value = config.get('settings', 'show_first_load_dialog')
-            return value.lower() == 'true'
-        else:
-            # First time - set to True and show dialog
-            if not config.has_section('settings'):
-                config.add_section('settings')
-            config.set('settings', 'show_first_load_dialog', 'True')
-            with open(controls_ini, 'w') as f:
-                config.write(f)
-            return True
+        from qgis.core import QgsSettings
+        settings = QgsSettings()
+        # Returns True (show dialog) if setting doesn't exist or is True
+        value = settings.value('geoserverconnector/show_first_load_dialog', True, type=bool)
+        print(f"DEBUG: should_show_first_load_dialog from QgsSettings: {value}")
+        return value
     except Exception as e:
         print(f"Error reading preference: {e}")
         return True

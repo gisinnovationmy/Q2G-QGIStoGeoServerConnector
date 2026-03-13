@@ -3,6 +3,9 @@ Copy/Move Layers Dialog Module
 Dialog for copying or moving layers between workspaces.
 """
 
+import os
+import sys
+import importlib.util
 from qgis.PyQt.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QListWidget, QListWidgetItem,
     QPushButton, QComboBox, QTextEdit, QProgressBar, QGroupBox
@@ -11,18 +14,30 @@ from qgis.PyQt.QtCore import Qt, pyqtSignal, QTimer
 from qgis.PyQt.QtGui import QFont
 from qgis.core import Qgis, QgsMessageLog
 
-# Import with fallback for direct execution
-try:
-    from .copy_move_thread import CopyMoveThread
-    from .layer_copy_move_handler import LayerCopyMoveHandler
-    from .layer_metadata_extractor import LayerMetadataExtractor
-except ImportError:
-    import sys
-    import os
-    sys.path.insert(0, os.path.dirname(__file__))
-    from copy_move_thread import CopyMoveThread
-    from layer_copy_move_handler import LayerCopyMoveHandler
-    from layer_metadata_extractor import LayerMetadataExtractor
+# Ensure we load modules from the same folder as this file
+_CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
+if _CURRENT_DIR not in sys.path:
+    sys.path.insert(0, _CURRENT_DIR)
+
+def _load_local_module(module_name):
+    """Load a module from the same directory as this file."""
+    module_file = os.path.join(_CURRENT_DIR, f"{module_name}.py")
+    if not os.path.exists(module_file):
+        raise ImportError(f"Module not found: {module_file}")
+    spec = importlib.util.spec_from_file_location(module_name, module_file)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"Could not load spec for: {module_file}")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+# Load local modules
+_cmt = _load_local_module("copy_move_thread")
+CopyMoveThread = _cmt.CopyMoveThread
+_lcmh = _load_local_module("layer_copy_move_handler")
+LayerCopyMoveHandler = _lcmh.LayerCopyMoveHandler
+_lme = _load_local_module("layer_metadata_extractor")
+LayerMetadataExtractor = _lme.LayerMetadataExtractor
 
 
 class CopyMoveLayersDialog(QDialog):

@@ -1,5 +1,5 @@
 import requests
-from PyQt5.QtCore import QThread, pyqtSignal
+from qgis.PyQt.QtCore import QThread, pyqtSignal
 from requests.exceptions import Timeout, ConnectionError
 
 class LayerLoadingThread(QThread):

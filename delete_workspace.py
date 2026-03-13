@@ -85,11 +85,11 @@ class WorkspaceDeletionManager:
             "Confirm Deletion", 
             f"Are you sure you want to delete workspace '{workspace_name}' and all its contents?\n"
             "This action cannot be undone.",
-            QMessageBox.Yes | QMessageBox.No, 
-            QMessageBox.No
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, 
+            QMessageBox.StandardButton.No
         )
         
-        return reply == QMessageBox.Yes
+        return reply == QMessageBox.StandardButton.Yes
     
     def _execute_workspace_deletion(self, workspace_name, url, username, password):
         """
