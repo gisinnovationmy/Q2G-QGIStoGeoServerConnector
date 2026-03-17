@@ -1,0 +1,459 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Configuration - Q2G v1.0.0-Qt6 (Stable) Manual | QGIS GeoServer Connector</title>
+    <meta name="description" content="Configure Q2G GeoServer Connector v1.0.0-Qt6 (Stable) for your QGIS workflow. Learn connection setup and authentication.">
+    <meta name="keywords" content="QGIS, GeoServer, Q2G, configuration">
+    <link rel="stylesheet" href="style.css">
+    <style>
+        /* Olive Branch Theme (#13) */
+        :root {
+            --olive-primary: #6B7B3C;
+            --olive-secondary: #8FA058;
+            --olive-light: #F4F6EE;
+            --olive-lighter: #F9FAF6;
+            --olive-dark: #454F28;
+            --olive-text: #4A5530;
+        }
+        
+        body {
+            background: linear-gradient(145deg, var(--olive-lighter) 0%, var(--olive-light) 50%, #EEF2E6 100%);
+        }
+        
+        .page-header {
+            background: linear-gradient(135deg, rgba(255,255,255,0.98) 0%, rgba(249,250,246,0.98) 100%);
+            box-shadow: 0 8px 32px rgba(107,123,60,0.12);
+            border: 1px solid rgba(244,246,238,0.9);
+        }
+        
+        .page-header::before {
+            background: linear-gradient(90deg, var(--olive-primary), var(--olive-secondary), #A8B86D);
+        }
+        
+        .page-header h1 {
+            color: var(--olive-dark);
+        }
+        
+        .page-header p {
+            color: var(--olive-text);
+        }
+        
+        .content {
+            background: rgba(255, 255, 255, 0.97);
+            box-shadow: 0 8px 32px rgba(107,123,60,0.1);
+            border: 1px solid rgba(244,246,238,0.9);
+        }
+        
+        h2 {
+            color: var(--olive-dark);
+            border-bottom-color: var(--olive-secondary);
+        }
+        
+        h3 {
+            color: var(--olive-primary);
+        }
+        
+        .toc {
+            background: linear-gradient(145deg, #FFFFFF 0%, var(--olive-light) 100%);
+            border: 1px solid rgba(143,160,88,0.2);
+        }
+        
+        .toc a {
+            color: var(--olive-text);
+            background: rgba(255,255,255,0.7);
+        }
+        
+        .toc a:hover {
+            color: var(--olive-dark);
+            background: var(--olive-light);
+        }
+        
+        .step-box {
+            border-left-color: var(--olive-secondary);
+            background: linear-gradient(145deg, #FFFFFF 0%, var(--olive-lighter) 100%);
+        }
+        
+        .step-box strong {
+            color: var(--olive-primary);
+        }
+        
+        .format-table th {
+            background: linear-gradient(135deg, var(--olive-primary) 0%, var(--olive-secondary) 100%);
+        }
+        
+        .format-table tr:hover {
+            background: var(--olive-lighter);
+        }
+        
+        .note {
+            background: linear-gradient(135deg, #F0F4E8 0%, var(--olive-light) 100%);
+            border-left-color: var(--olive-primary);
+            color: var(--olive-dark);
+        }
+        
+        .success {
+            background: linear-gradient(135deg, #E8F5E9 0%, #D5E8D4 100%);
+            border-left-color: var(--olive-secondary);
+            color: var(--olive-dark);
+        }
+        
+        .warning {
+            background: linear-gradient(135deg, #FFF8E1 0%, #FFECB3 100%);
+            border-left-color: #F0AD4E;
+            color: #8A6D3B;
+        }
+        
+        a {
+            color: var(--olive-primary);
+        }
+        
+        a:hover {
+            color: var(--olive-secondary);
+        }
+        
+        code {
+            background: var(--olive-light);
+            color: var(--olive-dark);
+        }
+        
+        pre {
+            border-left-color: var(--olive-secondary);
+        }
+        
+        .back-to-top {
+            background: linear-gradient(135deg, var(--olive-primary) 0%, var(--olive-secondary) 100%);
+        }
+        
+        .back-to-top:hover {
+            background: linear-gradient(135deg, var(--olive-dark) 0%, var(--olive-primary) 100%);
+        }
+        
+        footer {
+            background: rgba(255, 255, 255, 0.95);
+            box-shadow: 0 4px 16px rgba(107,123,60,0.08);
+        }
+    </style>
+</head>
+<body id="top">
+    <div class="container">
+        <nav class="breadcrumb">
+            <a href="index.html">Home</a> / Configuration
+        </nav>
+        
+        <header class="page-header">
+            <h1>⚙️ Configuration Guide</h1>
+            <p>Set up your GeoServer connection and plugin preferences</p>
+        </header>
+        
+        <div class="warning" style="background: linear-gradient(135deg, #FFF3E0 0%, #FFE0B2 100%); border-left: 5px solid #FF9800; padding: 20px; margin: 20px 0; border-radius: 8px;">
+            <h3 style="color: #E65100; margin-top: 0;">⚠️ Security Notice: Password Storage</h3>
+            <p style="color: #BF360C; font-size: 1em; line-height: 1.6;">
+                <strong>Important:</strong> This plugin was originally developed for internal project use within trusted administrator environments. 
+                Credentials (GeoServer and PostGIS passwords) are currently stored in plain text in local configuration files 
+                (<code>connection.ini</code> and <code>postgis.ini</code>) for convenience.
+            </p>
+            <p style="color: #BF360C; font-size: 1em; line-height: 1.6;">
+                <strong>Recommendation:</strong> Only use this plugin on secure, administrator-controlled computers. 
+                Password encryption may be available in future versions. If security is a concern, consider using environment 
+                variables or GeoServer's built-in authentication mechanisms.
+            </p>
+        </div>
+        
+        <main class="content">
+            <!-- Table of Contents -->
+            <nav class="toc">
+                <h3>On This Page</h3>
+                <ul>
+                    <li><a href="#opening">Opening the Plugin</a></li>
+                    <li><a href="#connection">Connection Settings</a></li>
+                    <li><a href="#testing">Testing Your Connection</a></li>
+                    <li><a href="#workspace">Workspace Configuration</a></li>
+                    <li><a href="#upload-options">Upload Options</a></li>
+                    <li><a href="#authentication">Authentication Methods</a></li>
+                    <li><a href="#advanced">Advanced Settings</a></li>
+                    <li><a href="#saving">Saving Your Settings</a></li>
+                    <li><a href="#troubleshooting">Troubleshooting</a></li>
+                </ul>
+            </nav>
+            
+            <section id="opening">
+                <h2>Opening the Plugin</h2>
+                <p>To open Q2G:</p>
+                <ol>
+                    <li>Open QGIS</li>
+                    <li>Go to <code>Plugins → Q2G</code> or click the Q2G icon in the toolbar</li>
+                    <li>The plugin window will open as a docked panel on the right side of QGIS</li>
+                </ol>
+            </section>
+            
+            <section id="connection">
+                <h2>Q2G Connection Settings</h2>
+                <p>The first step is to configure your Q2G connection. This information is required for all operations.</p>
+                
+                <h3>Required Information</h3>
+                <ul>
+                    <li><strong>GeoServer URL:</strong> The base URL of your GeoServer instance</li>
+                    <li><strong>Username:</strong> Your GeoServer admin username</li>
+                    <li><strong>Password:</strong> Your GeoServer admin password</li>
+                </ul>
+                
+                <h3>Common GeoServer URLs</h3>
+                <table class="format-table">
+                    <tr>
+                        <th>Setup</th>
+                        <th>URL Example</th>
+                    </tr>
+                    <tr>
+                        <td>Local Development</td>
+                        <td><code>http://localhost:8080/geoserver</code></td>
+                    </tr>
+                    <tr>
+                        <td>Local with Custom Port</td>
+                        <td><code>http://localhost:9000/geoserver</code></td>
+                    </tr>
+                    <tr>
+                        <td>Remote Server</td>
+                        <td><code>http://geoserver.example.com/geoserver</code></td>
+                    </tr>
+                    <tr>
+                        <td>HTTPS Connection</td>
+                        <td><code>https://geoserver.example.com/geoserver</code></td>
+                    </tr>
+                </table>
+                
+                <h3>Entering Connection Details</h3>
+                <div class="step-box">
+                    <strong>Step 1:</strong> In the Q2G panel, locate the connection settings section at the top
+                </div>
+                
+                <div class="step-box">
+                    <strong>Step 2:</strong> Enter your GeoServer URL in the "GeoServer URL" field
+                </div>
+                
+                <div class="step-box">
+                    <strong>Step 3:</strong> Enter your username in the "Username" field
+                </div>
+                
+                <div class="step-box">
+                    <strong>Step 4:</strong> Enter your password in the "Password" field
+                </div>
+                
+                <div class="step-box">
+                    <strong>Step 5:</strong> Click the "Test Connection" button to verify your settings
+                </div>
+                
+                <div class="success">
+                    <strong>Success!</strong> If the test is successful, you'll see a confirmation message.
+                </div>
+            </section>
+            
+            <section id="testing">
+                <h2>Testing Your Connection</h2>
+                <p>Always test your connection before proceeding with uploads:</p>
+                
+                <h3>How to Test</h3>
+                <ol>
+                    <li>Enter your GeoServer URL, username, and password</li>
+                    <li>Click the "Test Connection" button</li>
+                    <li>Wait for the test to complete</li>
+                </ol>
+                
+                <h3>Successful Test</h3>
+                <p>You'll see a message like:</p>
+                <pre>✓ Connection successful! GeoServer version: 2.21.0</pre>
+                
+                <h3>Failed Test</h3>
+                <p>If the test fails, you'll see an error message. Common issues:</p>
+                <ul>
+                    <li><strong>Connection refused:</strong> GeoServer is not running or URL is incorrect</li>
+                    <li><strong>Authentication failed:</strong> Username or password is incorrect</li>
+                    <li><strong>Network error:</strong> Check your internet connection</li>
+                </ul>
+            </section>
+            
+            <section id="workspace">
+                <h2>Workspace Configuration</h2>
+                <p>After connecting to GeoServer, you need to select or create a workspace.</p>
+                
+                <h3>What is a Workspace?</h3>
+                <p>A workspace is a logical grouping of layers and datastores in GeoServer. Each workspace is independent and can have its own set of layers, styles, and data sources.</p>
+                
+                <h3>Selecting an Existing Workspace</h3>
+                <ol>
+                    <li>Click the "Workspace" dropdown menu</li>
+                    <li>Select the workspace where you want to upload layers</li>
+                    <li>The plugin will load the workspace's layers and datastores</li>
+                </ol>
+                
+                <h3>Creating a New Workspace</h3>
+                <ol>
+                    <li>Click the "Create New Workspace" button</li>
+                    <li>Enter a name for your workspace (e.g., "my_project")</li>
+                    <li>Click "Create"</li>
+                    <li>The new workspace will be automatically selected</li>
+                </ol>
+                
+                <div class="note">
+                    <strong>Naming Convention:</strong> Use lowercase letters, numbers, and underscores. Avoid spaces and special characters.
+                </div>
+            </section>
+            
+            <section id="upload-options">
+                <h2>Upload Options</h2>
+                <p>Configure how your layers will be uploaded:</p>
+                
+                <h3>Auto-Overwrite Existing Layers</h3>
+                <p>When enabled, the plugin will automatically delete and replace existing layers with the same name:</p>
+                <ul>
+                    <li><strong>Enabled:</strong> Existing layers are replaced (useful for updates)</li>
+                    <li><strong>Disabled:</strong> Upload fails if layer already exists</li>
+                </ul>
+                
+                <h3>Upload SLD Styles</h3>
+                <p>When enabled, the plugin will automatically export and upload QGIS layer styles as SLD:</p>
+                <ul>
+                    <li><strong>Enabled:</strong> Styles are uploaded and applied to layers</li>
+                    <li><strong>Disabled:</strong> Only layers are uploaded, no styles</li>
+                </ul>
+                
+                <h3>Overwrite Existing Styles</h3>
+                <p>When enabled, existing styles on GeoServer will be replaced:</p>
+                <ul>
+                    <li><strong>Enabled:</strong> Existing styles are updated</li>
+                    <li><strong>Disabled:</strong> Style upload fails if style already exists</li>
+                </ul>
+            </section>
+            
+            <section id="authentication">
+                <h2>Authentication Methods</h2>
+                
+                <h3>Basic Authentication (Default)</h3>
+                <p>The plugin uses HTTP Basic Authentication by default:</p>
+                <ul>
+                    <li>Username and password are sent with each request</li>
+                    <li>Recommended for HTTPS connections only</li>
+                    <li>Simple and widely supported</li>
+                </ul>
+                
+                <h3>HTTPS Connections</h3>
+                <p>For secure connections:</p>
+                <ol>
+                    <li>Use <code>https://</code> in your GeoServer URL</li>
+                    <li>Ensure your GeoServer has a valid SSL certificate</li>
+                    <li>The plugin will handle SSL verification automatically</li>
+                </ol>
+                
+                <h3>PostGIS Credentials</h3>
+                <p>For PostGIS layer uploads, you may need to provide database credentials:</p>
+                <ul>
+                    <li>The plugin will prompt for credentials if needed</li>
+                    <li>Credentials are stored locally in <code>postgis.ini</code></li>
+                    <li>You can update them in the PostGIS dialog</li>
+                </ul>
+            </section>
+            
+            <section id="advanced">
+                <h2>Advanced Settings</h2>
+                
+                <h3>Proxy Configuration</h3>
+                <p>If you're behind a corporate proxy:</p>
+                <ol>
+                    <li>Configure QGIS proxy settings: <code>Settings → Options → Network</code></li>
+                    <li>The plugin will automatically use these settings</li>
+                </ol>
+                
+                <h3>SSL Certificate Verification</h3>
+                <p>For self-signed certificates:</p>
+                <ul>
+                    <li>The plugin attempts to verify SSL certificates by default</li>
+                    <li>For development environments, you may need to disable verification</li>
+                    <li>Contact your administrator for proper certificate setup</li>
+                </ul>
+                
+                <h3>Timeout Settings</h3>
+                <p>Default timeout values:</p>
+                <ul>
+                    <li><strong>Connection timeout:</strong> 10 seconds</li>
+                    <li><strong>Read timeout:</strong> 30 seconds</li>
+                    <li><strong>Upload timeout:</strong> 300 seconds (5 minutes)</li>
+                </ul>
+            </section>
+            
+            <section id="saving">
+                <h2>Saving Your Settings</h2>
+                <p>Q2G automatically saves your settings:</p>
+                <ul>
+                    <li>Connection details are saved in QGIS settings</li>
+                    <li>PostGIS credentials are saved in <code>postgis.ini</code></li>
+                    <li>Settings persist between QGIS sessions</li>
+                </ul>
+                
+                <div class="warning">
+                    <strong>Security Note:</strong> Passwords are stored in QGIS settings. Ensure your QGIS configuration directory has appropriate file permissions.
+                </div>
+            </section>
+            
+            <section id="troubleshooting">
+                <h2>Troubleshooting Connection Issues</h2>
+                
+                <h3>Cannot connect to GeoServer</h3>
+                <ul>
+                    <li>Verify GeoServer is running</li>
+                    <li>Check the GeoServer URL is correct</li>
+                    <li>Ensure you have network access to the server</li>
+                    <li>Check firewall rules</li>
+                </ul>
+                
+                <h3>Authentication failed</h3>
+                <ul>
+                    <li>Verify username and password are correct</li>
+                    <li>Check if the user has admin privileges</li>
+                    <li>Ensure the user hasn't been disabled</li>
+                </ul>
+                
+                <h3>Connection timeout</h3>
+                <ul>
+                    <li>Check your internet connection</li>
+                    <li>Try increasing the timeout value</li>
+                    <li>Check if GeoServer is responding slowly</li>
+                </ul>
+                
+                <h3>SSL certificate error</h3>
+                <ul>
+                    <li>Verify the SSL certificate is valid</li>
+                    <li>Check the certificate hasn't expired</li>
+                    <li>For self-signed certificates, contact your administrator</li>
+                </ul>
+            </section>
+            
+            <section>
+                <h2>Next Steps</h2>
+                <p>Once you've configured your connection:</p>
+                <ul>
+                    <li><a href="04-layer-upload.html">Layer Upload</a> - Upload your first layer</li>
+                    <li><a href="05-style-management.html">Style Management</a> - Configure layer styles</li>
+                </ul>
+            </section>
+        </main>
+        
+        <footer>
+            <p>&copy; 2025 GIS Innovation Sdn Bhd. All rights reserved.</p>
+        </footer>
+    </div>
+    
+    <a href="#top" class="back-to-top" id="backToTop" title="Back to Top">↑</a>
+    
+    <script>
+        window.addEventListener('scroll', function() {
+            var backToTop = document.getElementById('backToTop');
+            if (window.scrollY > 300) {
+                backToTop.classList.add('visible');
+            } else {
+                backToTop.classList.remove('visible');
+            }
+        });
+    </script>
+</body>
+</html>
