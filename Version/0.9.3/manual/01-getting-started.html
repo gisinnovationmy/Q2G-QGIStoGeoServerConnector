@@ -1,0 +1,401 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Getting Started - Q2G v0.9.3 (Beta) Manual | QGIS GeoServer Connector</title>
+    <meta name="description" content="Getting started with Q2G GeoServer Connector v0.9.3 (Beta). Learn how to upload and manage geospatial data on GeoServer using QGIS.">
+    <meta name="keywords" content="QGIS, GeoServer, Q2G, getting started, Malaysia GIS Training">
+    <link rel="stylesheet" href="style.css">
+    <style>
+        /* Olive Branch Theme (#13) */
+        :root {
+            --olive-primary: #6B7B3C;
+            --olive-secondary: #8FA058;
+            --olive-light: #F4F6EE;
+            --olive-lighter: #F9FAF6;
+            --olive-dark: #454F28;
+            --olive-text: #4A5530;
+        }
+        
+        body {
+            background: linear-gradient(145deg, var(--olive-lighter) 0%, var(--olive-light) 50%, #EEF2E6 100%);
+        }
+        
+        .page-header {
+            background: linear-gradient(135deg, rgba(255,255,255,0.98) 0%, rgba(249,250,246,0.98) 100%);
+            box-shadow: 0 8px 32px rgba(107,123,60,0.12);
+            border: 1px solid rgba(244,246,238,0.9);
+        }
+        
+        .page-header::before {
+            background: linear-gradient(90deg, var(--olive-primary), var(--olive-secondary), #A8B86D);
+        }
+        
+        .page-header h1 {
+            color: var(--olive-dark);
+        }
+        
+        .page-header p {
+            color: var(--olive-text);
+        }
+        
+        .content {
+            background: rgba(255, 255, 255, 0.97);
+            box-shadow: 0 8px 32px rgba(107,123,60,0.1);
+            border: 1px solid rgba(244,246,238,0.9);
+        }
+        
+        h2 {
+            color: var(--olive-dark);
+            border-bottom-color: var(--olive-secondary);
+        }
+        
+        h3 {
+            color: var(--olive-primary);
+        }
+        
+        .toc {
+            background: linear-gradient(145deg, #FFFFFF 0%, var(--olive-light) 100%);
+            border: 1px solid rgba(143,160,88,0.2);
+        }
+        
+        .toc a {
+            color: var(--olive-text);
+            background: rgba(255,255,255,0.7);
+        }
+        
+        .toc a:hover {
+            color: var(--olive-dark);
+            background: var(--olive-light);
+        }
+        
+        .feature-card {
+            border-left-color: var(--olive-secondary);
+            background: linear-gradient(145deg, #FFFFFF 0%, var(--olive-lighter) 100%);
+        }
+        
+        .feature-card:hover {
+            box-shadow: 0 8px 24px rgba(107,123,60,0.15);
+        }
+        
+        .feature-card h3 {
+            color: var(--olive-primary);
+        }
+        
+        .format-table th {
+            background: linear-gradient(135deg, var(--olive-primary) 0%, var(--olive-secondary) 100%);
+        }
+        
+        .format-table tr:hover {
+            background: var(--olive-lighter);
+        }
+        
+        .note {
+            background: linear-gradient(135deg, #F0F4E8 0%, var(--olive-light) 100%);
+            border-left-color: var(--olive-primary);
+            color: var(--olive-dark);
+        }
+        
+        a {
+            color: var(--olive-primary);
+        }
+        
+        a:hover {
+            color: var(--olive-secondary);
+        }
+        
+        code {
+            background: var(--olive-light);
+            color: var(--olive-dark);
+        }
+        
+        pre {
+            border-left-color: var(--olive-secondary);
+        }
+        
+        .back-to-top {
+            background: linear-gradient(135deg, var(--olive-primary) 0%, var(--olive-secondary) 100%);
+        }
+        
+        .back-to-top:hover {
+            background: linear-gradient(135deg, var(--olive-dark) 0%, var(--olive-primary) 100%);
+        }
+        
+        footer {
+            background: rgba(255, 255, 255, 0.95);
+            box-shadow: 0 4px 16px rgba(107,123,60,0.08);
+        }
+    </style>
+</head>
+<body id="top">
+    <div class="container">
+        <nav class="breadcrumb">
+            <a href="index.html">Home</a> / Getting Started
+        </nav>
+        
+        <header class="page-header">
+            <h1>🚀 Getting Started with Q2G</h1>
+            <p>Your guide to uploading and managing geospatial data on GeoServer</p>
+        </header>
+        
+        <main class="content">
+            <!-- Table of Contents -->
+            <nav class="toc">
+                <h3>On This Page</h3>
+                <ul>
+                    <li><a href="#what-is-q2g">What is Q2G?</a></li>
+                    <li><a href="#key-features">Key Features</a></li>
+                    <li><a href="#system-requirements">System Requirements</a></li>
+                    <li><a href="#before-you-start">Before You Start</a></li>
+                    <li><a href="#cors-configuration">CORS Configuration</a></li>
+                    <li><a href="#quick-start">Quick Start Workflow</a></li>
+                    <li><a href="#interface">Understanding the Interface</a></li>
+                    <li><a href="#supported-formats">Supported Layer Formats</a></li>
+                    <li><a href="#next-steps">Next Steps</a></li>
+                </ul>
+            </nav>
+            
+            <section id="what-is-q2g">
+                <h2>What is Q2G?</h2>
+                <p>Q2G is a powerful QGIS plugin that streamlines the process of uploading layers and managing styles on GeoServer. It provides a user-friendly interface for:</p>
+                <ul>
+                    <li>Uploading QGIS layers to GeoServer in multiple formats</li>
+                    <li>Managing SLD (Styled Layer Descriptor) styles</li>
+                    <li>Creating and managing GeoServer workspaces</li>
+                    <li>Previewing layers and styles before deployment</li>
+                    <li>Batch uploading multiple layers at once</li>
+                    <li>Supporting PostGIS, Shapefile, GeoPackage, and GeoTIFF formats</li>
+                </ul>
+            </section>
+            
+            <section id="key-features">
+                <h2>Key Features</h2>
+                <div class="feature-grid">
+                    <div class="feature-card">
+                        <h3>📤 Multi-Format Upload</h3>
+                        <p>Upload Shapefiles, GeoPackages, GeoTIFF, PostGIS layers, and more directly to GeoServer.</p>
+                    </div>
+                    <div class="feature-card">
+                        <h3>🎨 Style Management</h3>
+                        <p>Export QGIS styles as SLD and upload them to GeoServer automatically.</p>
+                    </div>
+                    <div class="feature-card">
+                        <h3>📁 Workspace Management</h3>
+                        <p>Create, delete, and manage GeoServer workspaces and datastores.</p>
+                    </div>
+                    <div class="feature-card">
+                        <h3>👁️ Live Preview</h3>
+                        <p>Preview layers and styles in a web map before uploading.</p>
+                    </div>
+                    <div class="feature-card">
+                        <h3>📊 Batch Operations</h3>
+                        <p>Upload multiple layers at once with automatic style association.</p>
+                    </div>
+                    <div class="feature-card">
+                        <h3>🔄 Auto-Overwrite</h3>
+                        <p>Automatically replace existing layers and styles on GeoServer.</p>
+                    </div>
+                </div>
+            </section>
+            
+            <section id="system-requirements">
+                <h2>System Requirements</h2>
+                <ul>
+                    <li><strong>QGIS:</strong> Version 3.16 or higher</li>
+                    <li><strong>GeoServer:</strong> Version 2.19 or higher</li>
+                    <li><strong>Python:</strong> 3.6 or higher (included with QGIS)</li>
+                    <li><strong>Network:</strong> Direct access to GeoServer REST API</li>
+                    <li><strong>Disk Space:</strong> Sufficient space for temporary files during upload</li>
+                </ul>
+            </section>
+            
+            <section id="before-you-start">
+                <h2>Before You Start</h2>
+                <p>Make sure you have the following information ready:</p>
+                <ul>
+                    <li><strong>GeoServer URL:</strong> e.g., http://localhost:8080/geoserver</li>
+                    <li><strong>GeoServer Username:</strong> Your GeoServer admin username</li>
+                    <li><strong>GeoServer Password:</strong> Your GeoServer admin password</li>
+                    <li><strong>Workspace Name:</strong> The target workspace on GeoServer (or create a new one)</li>
+                    <li><strong>QGIS Layers:</strong> Layers you want to upload (vector or raster)</li>
+                    <li><strong>GeoServer Importer Extension:</strong> Must be installed on GeoServer for layer uploads</li>
+                </ul>
+            </section>
+            
+            <section id="cors-configuration">
+                <h2>CORS Configuration (Recommended)</h2>
+                <p>CORS (Cross-Origin Resource Sharing) is recommended for the Preview feature, especially for local/development testing. It is good practice to enable CORS on your GeoServer.</p>
+                
+                <h3>How to Enable CORS in GeoServer</h3>
+                <p>CORS must be configured manually in GeoServer's <code>web.xml</code> file:</p>
+                <ol>
+                    <li>Navigate to your GeoServer installation directory</li>
+                    <li>Open <code>webapps/geoserver/WEB-INF/web.xml</code></li>
+                    <li>Find the commented CORS filter section (search for "CORS")</li>
+                    <li>Uncomment the CORS filter and filter-mapping sections</li>
+                    <li>Restart GeoServer</li>
+                </ol>
+                
+                <h3>Example CORS Configuration</h3>
+                <p>Uncomment or add the following in <code>web.xml</code>:</p>
+                <pre><code>&lt;filter&gt;
+    &lt;filter-name&gt;cross-origin&lt;/filter-name&gt;
+    &lt;filter-class&gt;org.eclipse.jetty.servlets.CrossOriginFilter&lt;/filter-class&gt;
+    &lt;init-param&gt;
+        &lt;param-name&gt;allowedOrigins&lt;/param-name&gt;
+        &lt;param-value&gt;*&lt;/param-value&gt;
+    &lt;/init-param&gt;
+    &lt;init-param&gt;
+        &lt;param-name&gt;allowedMethods&lt;/param-name&gt;
+        &lt;param-value&gt;GET,POST,PUT,DELETE,HEAD,OPTIONS&lt;/param-value&gt;
+    &lt;/init-param&gt;
+    &lt;init-param&gt;
+        &lt;param-name&gt;allowedHeaders&lt;/param-name&gt;
+        &lt;param-value&gt;*&lt;/param-value&gt;
+    &lt;/init-param&gt;
+&lt;/filter&gt;
+
+&lt;filter-mapping&gt;
+    &lt;filter-name&gt;cross-origin&lt;/filter-name&gt;
+    &lt;url-pattern&gt;/*&lt;/url-pattern&gt;
+&lt;/filter-mapping&gt;</code></pre>
+                
+                <p><strong>Note:</strong> For production environments, consider restricting <code>allowedOrigins</code> to specific domains instead of using <code>*</code>.</p>
+            </section>
+            
+            <section id="quick-start">
+                <h2>Quick Start Workflow</h2>
+                <ol>
+                    <li><strong>Install the Plugin:</strong> Download and install Q2G from the QGIS Plugin Manager</li>
+                    <li><strong>Configure Q2G:</strong> Enter your GeoServer URL, username, and password</li>
+                    <li><strong>Select Workspace:</strong> Choose or create a workspace on GeoServer</li>
+                    <li><strong>Select Layers:</strong> Check the QGIS layers you want to upload</li>
+                    <li><strong>Configure Options:</strong> Set upload preferences (overwrite, auto-style, etc.)</li>
+                    <li><strong>Upload:</strong> Click the Upload button and monitor the progress</li>
+                    <li><strong>Verify:</strong> Check the log for any errors and verify on GeoServer</li>
+                </ol>
+            </section>
+            
+            <section id="interface">
+                <h2>Understanding the Interface</h2>
+                <p>The Q2G plugin is divided into several main areas:</p>
+                
+                <h3>Connection Panel</h3>
+                <p>Located at the top of the plugin window, this is where you enter your GeoServer connection details:</p>
+                <ul>
+                    <li><strong>GeoServer URL:</strong> The base URL of your GeoServer instance</li>
+                    <li><strong>Username:</strong> Your GeoServer admin username</li>
+                    <li><strong>Password:</strong> Your GeoServer admin password</li>
+                    <li><strong>Test Connection:</strong> Button to verify your connection</li>
+                </ul>
+                
+                <h3>Workspace Selection</h3>
+                <p>Choose the target workspace for your uploads:</p>
+                <ul>
+                    <li>Dropdown list of existing workspaces</li>
+                    <li>Create New Workspace button</li>
+                    <li>Delete Workspace button</li>
+                    <li>Refresh button to reload workspace list</li>
+                </ul>
+                
+                <h3>Layer Selection</h3>
+                <p>Select which QGIS layers to upload:</p>
+                <ul>
+                    <li>Tree view of all QGIS layers</li>
+                    <li>Checkboxes to select/deselect layers</li>
+                    <li>Layer information (type, size, format)</li>
+                    <li>Action buttons (Show SLD, Upload SLD, etc.)</li>
+                </ul>
+                
+                <h3>Upload Options</h3>
+                <p>Configure how your layers will be uploaded:</p>
+                <ul>
+                    <li><strong>Auto-Overwrite:</strong> Replace existing layers</li>
+                    <li><strong>Upload SLD:</strong> Automatically upload layer styles</li>
+                    <li><strong>Overwrite SLD:</strong> Replace existing styles</li>
+                </ul>
+                
+                <h3>Upload Log</h3>
+                <p>Real-time display of upload progress and status messages:</p>
+                <ul>
+                    <li>Color-coded messages (green for success, red for errors)</li>
+                    <li>Detailed progress information</li>
+                    <li>Copy and Clear buttons</li>
+                </ul>
+            </section>
+            
+            <section id="supported-formats">
+                <h2>Supported Layer Formats</h2>
+                <table class="format-table">
+                    <tr>
+                        <th>Format</th>
+                        <th>Type</th>
+                        <th>Support</th>
+                        <th>Notes</th>
+                    </tr>
+                    <tr>
+                        <td>Shapefile (.shp)</td>
+                        <td>Vector</td>
+                        <td>✅ Full</td>
+                        <td>Most common format, fully supported</td>
+                    </tr>
+                    <tr>
+                        <td>GeoPackage (.gpkg)</td>
+                        <td>Vector</td>
+                        <td>✅ Full</td>
+                        <td>Modern format, all features supported</td>
+                    </tr>
+                    <tr>
+                        <td>GeoTIFF (.tif, .tiff)</td>
+                        <td>Raster</td>
+                        <td>✅ Full</td>
+                        <td>Raster imagery, styles fully supported</td>
+                    </tr>
+                    <tr>
+                        <td>PostGIS</td>
+                        <td>Vector</td>
+                        <td>✅ Full</td>
+                        <td>Database layers, automatic registration</td>
+                    </tr>
+                    <tr>
+                        <td>SQLite (.sqlite)</td>
+                        <td>Vector</td>
+                        <td>✅ Full</td>
+                        <td>Converted to Shapefile for upload</td>
+                    </tr>
+                </table>
+            </section>
+            
+            <section id="next-steps">
+                <h2>Next Steps</h2>
+                <p>Now that you understand the basics, proceed to:</p>
+                <ul>
+                    <li><a href="02-installation.html">Installation Guide</a> - Install the plugin</li>
+                    <li><a href="03-configuration.html">Configuration</a> - Set up your connection</li>
+                    <li><a href="04-layer-upload.html">Layer Upload</a> - Upload your first layer</li>
+                </ul>
+            </section>
+        </main>
+        
+        <footer>
+            <p>&copy; 2025 GIS Innovation Sdn Bhd. All rights reserved.</p>
+        </footer>
+    </div>
+    
+    <!-- Back to Top Button -->
+    <a href="#top" class="back-to-top" id="backToTop" title="Back to Top">↑</a>
+    
+    <script>
+        // Show/hide back to top button based on scroll position
+        window.addEventListener('scroll', function() {
+            var backToTop = document.getElementById('backToTop');
+            if (window.scrollY > 300) {
+                backToTop.classList.add('visible');
+            } else {
+                backToTop.classList.remove('visible');
+            }
+        });
+    </script>
+</body>
+</html>
