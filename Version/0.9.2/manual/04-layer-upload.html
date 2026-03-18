@@ -1,0 +1,492 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Layer Upload - Q2G v0.9.2 (Beta) Manual | QGIS GeoServer Connector</title>
+    <meta name="description" content="Upload layers to GeoServer using Q2G v0.9.2 (Beta). Support for Shapefiles, GeoPackage, GeoTIFF, and more.">
+    <meta name="keywords" content="QGIS, GeoServer, Q2G, layer upload, Malaysia GIS Training">
+    <link rel="stylesheet" href="style.css">
+    <style>
+        /* Olive Branch Theme (#13) */
+        :root {
+            --olive-primary: #6B7B3C;
+            --olive-secondary: #8FA058;
+            --olive-light: #F4F6EE;
+            --olive-lighter: #F9FAF6;
+            --olive-dark: #454F28;
+            --olive-text: #4A5530;
+        }
+        
+        body {
+            background: linear-gradient(145deg, var(--olive-lighter) 0%, var(--olive-light) 50%, #EEF2E6 100%);
+        }
+        
+        .page-header {
+            background: linear-gradient(135deg, rgba(255,255,255,0.98) 0%, rgba(249,250,246,0.98) 100%);
+            box-shadow: 0 8px 32px rgba(107,123,60,0.12);
+            border: 1px solid rgba(244,246,238,0.9);
+        }
+        
+        .page-header::before {
+            background: linear-gradient(90deg, var(--olive-primary), var(--olive-secondary), #A8B86D);
+        }
+        
+        .page-header h1 {
+            color: var(--olive-dark);
+        }
+        
+        .page-header p {
+            color: var(--olive-text);
+        }
+        
+        .content {
+            background: rgba(255, 255, 255, 0.97);
+            box-shadow: 0 8px 32px rgba(107,123,60,0.1);
+            border: 1px solid rgba(244,246,238,0.9);
+        }
+        
+        h2 {
+            color: var(--olive-dark);
+            border-bottom-color: var(--olive-secondary);
+        }
+        
+        h3 {
+            color: var(--olive-primary);
+        }
+        
+        .toc {
+            background: linear-gradient(145deg, #FFFFFF 0%, var(--olive-light) 100%);
+            border: 1px solid rgba(143,160,88,0.2);
+        }
+        
+        .toc a {
+            color: var(--olive-text);
+            background: rgba(255,255,255,0.7);
+        }
+        
+        .toc a:hover {
+            color: var(--olive-dark);
+            background: var(--olive-light);
+        }
+        
+        .step-box {
+            border-left-color: var(--olive-secondary);
+            background: linear-gradient(145deg, #FFFFFF 0%, var(--olive-lighter) 100%);
+        }
+        
+        .step-box strong {
+            color: var(--olive-primary);
+        }
+        
+        .format-table th {
+            background: linear-gradient(135deg, var(--olive-primary) 0%, var(--olive-secondary) 100%);
+        }
+        
+        .format-table tr:hover {
+            background: var(--olive-lighter);
+        }
+        
+        .note {
+            background: linear-gradient(135deg, #F0F4E8 0%, var(--olive-light) 100%);
+            border-left-color: var(--olive-primary);
+            color: var(--olive-dark);
+        }
+        
+        .warning {
+            background: linear-gradient(135deg, #FFF8E1 0%, #FFECB3 100%);
+            border-left-color: #F0AD4E;
+            color: #8A6D3B;
+        }
+        
+        .success {
+            background: linear-gradient(135deg, #E8F5E9 0%, #D5E8D4 100%);
+            border-left-color: var(--olive-secondary);
+            color: var(--olive-dark);
+        }
+        
+        a {
+            color: var(--olive-primary);
+        }
+        
+        a:hover {
+            color: var(--olive-secondary);
+        }
+        
+        code {
+            background: var(--olive-light);
+            color: var(--olive-dark);
+        }
+        
+        pre {
+            border-left-color: var(--olive-secondary);
+        }
+        
+        .back-to-top {
+            background: linear-gradient(135deg, var(--olive-primary) 0%, var(--olive-secondary) 100%);
+        }
+        
+        .back-to-top:hover {
+            background: linear-gradient(135deg, var(--olive-dark) 0%, var(--olive-primary) 100%);
+        }
+        
+        footer {
+            background: rgba(255, 255, 255, 0.95);
+            box-shadow: 0 4px 16px rgba(107,123,60,0.08);
+        }
+    </style>
+</head>
+<body id="top">
+    <div class="container">
+        <nav class="breadcrumb">
+            <a href="index.html">Home</a> / Layer Upload
+        </nav>
+        
+        <header class="page-header">
+            <h1>📤 Layer Upload Guide</h1>
+            <p>Upload your QGIS layers to GeoServer</p>
+        </header>
+        
+        <main class="content">
+            <nav class="toc">
+                <h3>On This Page</h3>
+                <ul>
+                    <li><a href="#overview">Overview</a></li>
+                    <li><a href="#preparing">Preparing Layers</a></li>
+                    <li><a href="#single-upload">Single Layer Upload</a></li>
+                    <li><a href="#batch-upload">Batch Layer Upload</a></li>
+                    <li><a href="#formats">Supported Formats</a></li>
+                    <li><a href="#options">Upload Options</a></li>
+                    <li><a href="#progress">Upload Progress</a></li>
+                    <li><a href="#errors">Handling Errors</a></li>
+                    <li><a href="#completion">Upload Completion</a></li>
+                    <li><a href="#performance">Performance Tips</a></li>
+                </ul>
+            </nav>
+            
+            <section id="overview">
+                <h2>Overview</h2>
+                <p>Q2G allows you to upload layers from QGIS to GeoServer in multiple formats. The plugin handles format conversion, style export, and layer registration automatically.</p>
+                
+                <h3>Supported Upload Methods</h3>
+                <ul>
+                    <li><strong>Direct Upload:</strong> Shapefiles, GeoPackages, GeoTIFF</li>
+                    <li><strong>Importer API:</strong> For complex formats and batch operations</li>
+                    <li><strong>PostGIS Registration:</strong> Direct database layer registration</li>
+                    <li><strong>Format Conversion:</strong> Automatic conversion for unsupported formats</li>
+                </ul>
+            </section>
+            
+            <section id="preparing">
+                <h2>Preparing Layers for Upload</h2>
+                
+                <h3>Layer Requirements</h3>
+                <ul>
+                    <li><strong>CRS (Coordinate Reference System):</strong> Must be defined and valid</li>
+                    <li><strong>Geometry:</strong> Must be valid (no invalid geometries)</li>
+                    <li><strong>Attributes:</strong> Column names should be simple (avoid special characters)</li>
+                    <li><strong>Data Source:</strong> Must be accessible (local files or database)</li>
+                </ul>
+                
+                <h3>Checking Layer Properties</h3>
+                <ol>
+                    <li>Right-click the layer in QGIS Layers panel</li>
+                    <li>Select "Properties"</li>
+                    <li>Check the "Information" tab for CRS and geometry details</li>
+                    <li>Verify all information is correct</li>
+                </ol>
+                
+                <h3>Fixing Common Issues</h3>
+                <ul>
+                    <li><strong>Missing CRS:</strong> Right-click layer → Set Layer CRS</li>
+                    <li><strong>Invalid geometries:</strong> Use Vector → Geometry Tools → Fix Geometries</li>
+                    <li><strong>Special characters in names:</strong> Rename layer or attributes</li>
+                </ul>
+            </section>
+            
+            <section id="single-upload">
+                <h2>Single Layer Upload</h2>
+                
+                <h3>Step-by-Step Process</h3>
+                
+                <div class="step-box">
+                    <strong>Step 1: Configure Q2G Connection</strong>
+                    <p>Ensure your GeoServer connection is configured and tested (see Configuration guide)</p>
+                </div>
+                
+                <div class="step-box">
+                    <strong>Step 2: Select Workspace</strong>
+                    <p>Choose the target workspace from the Workspace dropdown</p>
+                </div>
+                
+                <div class="step-box">
+                    <strong>Step 3: Select Layer</strong>
+                    <p>In the QGIS Layers panel, check the checkbox next to the layer you want to upload</p>
+                </div>
+                
+                <div class="step-box">
+                    <strong>Step 4: Configure Options</strong>
+                    <p>Set upload options:</p>
+                    <ul>
+                        <li>Auto-Overwrite: Check if you want to replace existing layers</li>
+                        <li>Upload SLD: Check to upload layer styles</li>
+                        <li>Overwrite SLD: Check to replace existing styles</li>
+                    </ul>
+                </div>
+                
+                <div class="step-box">
+                    <strong>Step 5: Click Upload</strong>
+                    <p>Click the "Upload Layers" button to start the upload</p>
+                </div>
+                
+                <div class="step-box">
+                    <strong>Step 6: Monitor Progress</strong>
+                    <p>Watch the upload log for progress messages. The upload log shows:</p>
+                    <ul>
+                        <li>Green messages: Successful operations</li>
+                        <li>Red messages: Errors or failures</li>
+                        <li>Blue messages: Information and debug details</li>
+                    </ul>
+                </div>
+                
+                <div class="step-box">
+                    <strong>Step 7: Verify Upload</strong>
+                    <p>Check the log for success messages and verify on GeoServer</p>
+                </div>
+            </section>
+            
+            <section id="batch-upload">
+                <h2>Batch Layer Upload</h2>
+                <p>Upload multiple layers at once for efficiency:</p>
+                
+                <h3>Batch Upload Process</h3>
+                <ol>
+                    <li>Select multiple layers by checking their checkboxes</li>
+                    <li>Configure upload options (same as single upload)</li>
+                    <li>Click "Upload Layers"</li>
+                    <li>The plugin will upload layers sequentially</li>
+                    <li>Monitor progress in the upload log</li>
+                </ol>
+                
+                <h3>Batch Upload Features</h3>
+                <ul>
+                    <li><strong>Sequential Processing:</strong> Layers are uploaded one at a time</li>
+                    <li><strong>Error Handling:</strong> Failure of one layer doesn't stop others</li>
+                    <li><strong>Progress Tracking:</strong> See which layer is being processed</li>
+                    <li><strong>Summary Report:</strong> Final report shows success/failure counts</li>
+                </ul>
+                
+                <h3>Best Practices for Batch Upload</h3>
+                <ul>
+                    <li>Start with a small batch (3-5 layers) to test</li>
+                    <li>Ensure all layers have valid CRS</li>
+                    <li>Check layer names don't conflict with existing layers</li>
+                    <li>Monitor the upload log for errors</li>
+                    <li>Verify results on GeoServer before uploading more</li>
+                </ul>
+            </section>
+            
+            <section id="formats">
+                <h2>Supported Layer Formats</h2>
+                
+                <h3>Vector Formats</h3>
+                <table class="format-table">
+                    <tr>
+                        <th>Format</th>
+                        <th>Extension</th>
+                        <th>Upload Method</th>
+                        <th>Notes</th>
+                    </tr>
+                    <tr>
+                        <td>Shapefile</td>
+                        <td>.shp</td>
+                        <td>Direct/Importer</td>
+                        <td>Most common, fully supported</td>
+                    </tr>
+                    <tr>
+                        <td>GeoPackage</td>
+                        <td>.gpkg</td>
+                        <td>Importer</td>
+                        <td>Modern format, supports multiple layers</td>
+                    </tr>
+                    <tr>
+                        <td>SQLite</td>
+                        <td>.sqlite</td>
+                        <td>Converted to Shapefile</td>
+                        <td>Automatically converted for upload</td>
+                    </tr>
+                    <tr>
+                        <td>PostGIS</td>
+                        <td>Database</td>
+                        <td>Direct Registration</td>
+                        <td>Database layers, no file needed</td>
+                    </tr>
+                </table>
+                
+                <h3>Raster Formats</h3>
+                <table class="format-table">
+                    <tr>
+                        <th>Format</th>
+                        <th>Extension</th>
+                        <th>Upload Method</th>
+                        <th>Notes</th>
+                    </tr>
+                    <tr>
+                        <td>GeoTIFF</td>
+                        <td>.tif, .tiff</td>
+                        <td>Importer</td>
+                        <td>Georeferenced imagery, fully supported</td>
+                    </tr>
+                    <tr>
+                        <td>JPEG2000</td>
+                        <td>.jp2</td>
+                        <td>Importer</td>
+                        <td>Compressed imagery</td>
+                    </tr>
+                    <tr>
+                        <td>PNG</td>
+                        <td>.png</td>
+                        <td>Importer</td>
+                        <td>Requires georeferencing</td>
+                    </tr>
+                </table>
+            </section>
+            
+            <section id="options">
+                <h2>Upload Options Explained</h2>
+                
+                <h3>Auto-Overwrite Existing Layers</h3>
+                <p><strong>When to use:</strong> Updating existing layers on GeoServer</p>
+                <p><strong>What it does:</strong></p>
+                <ul>
+                    <li>Checks if layer already exists on GeoServer</li>
+                    <li>Deletes the existing layer and datastore</li>
+                    <li>Uploads the new layer</li>
+                </ul>
+                <p><strong>Caution:</strong> This will delete all data associated with the existing layer</p>
+                
+                <h3>Upload SLD Styles</h3>
+                <p><strong>When to use:</strong> When you want to apply QGIS styles to GeoServer layers</p>
+                <p><strong>What it does:</strong></p>
+                <ul>
+                    <li>Exports the QGIS layer style as SLD</li>
+                    <li>Uploads the SLD to GeoServer</li>
+                    <li>Associates the style with the layer</li>
+                </ul>
+                <p><strong>Note:</strong> Not all QGIS styles can be perfectly converted to SLD</p>
+                
+                <h3>Overwrite Existing Styles</h3>
+                <p><strong>When to use:</strong> Updating styles for existing layers</p>
+                <p><strong>What it does:</strong></p>
+                <ul>
+                    <li>Replaces the existing SLD style</li>
+                    <li>Applies the new style to the layer</li>
+                </ul>
+            </section>
+            
+            <section id="progress">
+                <h2>Understanding Upload Progress</h2>
+                
+                <h3>Upload Log Messages</h3>
+                <ul>
+                    <li><strong>✓ (Green):</strong> Successful operation</li>
+                    <li><strong>✗ (Red):</strong> Error or failure</li>
+                    <li><strong>⚠ (Orange):</strong> Warning or non-critical issue</li>
+                    <li><strong>ℹ (Blue):</strong> Information or debug message</li>
+                </ul>
+                
+                <h3>Typical Upload Sequence</h3>
+                <ol>
+                    <li>Checking if layer exists on GeoServer</li>
+                    <li>Deleting existing layer (if auto-overwrite enabled)</li>
+                    <li>Creating import job</li>
+                    <li>Uploading file to GeoServer</li>
+                    <li>Executing import</li>
+                    <li>Publishing layer</li>
+                    <li>Exporting and uploading SLD style (if enabled)</li>
+                    <li>Associating style with layer</li>
+                </ol>
+            </section>
+            
+            <section id="errors">
+                <h2>Handling Upload Errors</h2>
+                
+                <h3>Common Error Messages</h3>
+                <ul>
+                    <li><strong>"Layer already exists":</strong> Enable Auto-Overwrite or use a different name</li>
+                    <li><strong>"Invalid CRS":</strong> Set the layer's CRS in QGIS</li>
+                    <li><strong>"Connection refused":</strong> Check GeoServer is running</li>
+                    <li><strong>"Authentication failed":</strong> Verify username/password</li>
+                    <li><strong>"File too large":</strong> Split into smaller files or increase GeoServer limits</li>
+                </ul>
+                
+                <h3>Troubleshooting Steps</h3>
+                <ol>
+                    <li>Check the upload log for detailed error messages</li>
+                    <li>Verify your GeoServer connection</li>
+                    <li>Check layer properties (CRS, geometry, etc.)</li>
+                    <li>Try uploading a different layer to test</li>
+                    <li>Check GeoServer logs for server-side errors</li>
+                </ol>
+            </section>
+            
+            <section id="completion">
+                <h2>Upload Completion</h2>
+                
+                <h3>Success Indicators</h3>
+                <ul>
+                    <li>Upload log shows "✓ Layer uploaded successfully"</li>
+                    <li>No error messages in the log</li>
+                    <li>Layer appears in GeoServer workspace</li>
+                    <li>Style is applied (if SLD upload was enabled)</li>
+                </ul>
+                
+                <h3>After Upload</h3>
+                <ol>
+                    <li>Verify the layer on GeoServer</li>
+                    <li>Check if the style was applied correctly</li>
+                    <li>Test the layer in a web map</li>
+                    <li>Make any necessary adjustments</li>
+                </ol>
+            </section>
+            
+            <section id="performance">
+                <h2>Performance Tips</h2>
+                <ul>
+                    <li><strong>File Size:</strong> Smaller files upload faster. Consider splitting large files.</li>
+                    <li><strong>Network:</strong> Faster network = faster uploads. Check your connection speed.</li>
+                    <li><strong>GeoServer Load:</strong> Upload during off-peak hours for better performance.</li>
+                    <li><strong>Batch Size:</strong> Upload 5-10 layers at a time for optimal performance.</li>
+                    <li><strong>Compression:</strong> Use compressed formats (GeoPackage) when possible.</li>
+                </ul>
+            </section>
+            
+            <section>
+                <h2>Next Steps</h2>
+                <ul>
+                    <li><a href="05-style-management.html">Style Management</a> - Manage layer styles</li>
+                    <li><a href="07-preview.html">Preview & Visualization</a> - Preview your layers</li>
+                    <li><a href="08-troubleshooting.html">Troubleshooting</a> - Solve common issues</li>
+                </ul>
+            </section>
+        </main>
+        
+        <footer>
+            <p>&copy; 2025 GIS Innovation Sdn Bhd. All rights reserved.</p>
+        </footer>
+    </div>
+    
+    <a href="#top" class="back-to-top" id="backToTop" title="Back to Top">↑</a>
+    
+    <script>
+        window.addEventListener('scroll', function() {
+            var backToTop = document.getElementById('backToTop');
+            if (window.scrollY > 300) {
+                backToTop.classList.add('visible');
+            } else {
+                backToTop.classList.remove('visible');
+            }
+        });
+    </script>
+</body>
+</html>
