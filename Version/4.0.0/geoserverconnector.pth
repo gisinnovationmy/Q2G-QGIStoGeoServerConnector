@@ -1,0 +1,1 @@
+import site; site.addsitedir(r'C:\Users\lyesm\AppData\Roaming\QGIS\QGIS4\profiles\default\python\plugins\geoserverconnector')
