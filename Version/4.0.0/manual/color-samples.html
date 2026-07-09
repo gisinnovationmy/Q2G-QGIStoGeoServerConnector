@@ -1,0 +1,783 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Q2G Documentation - Color Theme Picker</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: #f5f5f5;
+            padding: 20px;
+            line-height: 1.6;
+        }
+        
+        .header {
+            text-align: center;
+            padding: 30px;
+            background: white;
+            border-radius: 12px;
+            margin-bottom: 30px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        
+        .header h1 {
+            color: #333;
+            margin-bottom: 10px;
+        }
+        
+        .header p {
+            color: #666;
+        }
+        
+        .themes-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+            gap: 25px;
+            max-width: 1600px;
+            margin: 0 auto;
+        }
+        
+        .theme-card {
+            border-radius: 16px;
+            overflow: hidden;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+            transition: transform 0.3s, box-shadow 0.3s;
+            cursor: pointer;
+        }
+        
+        .theme-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 8px 30px rgba(0,0,0,0.15);
+        }
+        
+        .theme-header {
+            padding: 20px;
+            color: white;
+        }
+        
+        .theme-header h2 {
+            font-size: 1.3em;
+            margin-bottom: 5px;
+        }
+        
+        .theme-header span {
+            font-size: 0.85em;
+            opacity: 0.9;
+        }
+        
+        .theme-content {
+            padding: 20px;
+            background: white;
+        }
+        
+        .theme-content h3 {
+            margin-bottom: 10px;
+            padding-bottom: 8px;
+            border-bottom: 3px solid;
+        }
+        
+        .theme-content p {
+            margin-bottom: 12px;
+            font-size: 0.95em;
+        }
+        
+        .color-swatches {
+            display: flex;
+            gap: 8px;
+            margin: 15px 0;
+        }
+        
+        .swatch {
+            width: 35px;
+            height: 35px;
+            border-radius: 8px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.15);
+        }
+        
+        .theme-toc {
+            padding: 15px;
+            border-radius: 8px;
+            margin: 15px 0;
+        }
+        
+        .theme-toc ul {
+            list-style: none;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+        
+        .theme-toc a {
+            display: inline-block;
+            padding: 6px 12px;
+            border-radius: 6px;
+            text-decoration: none;
+            font-size: 0.85em;
+            transition: all 0.2s;
+        }
+        
+        .theme-btn {
+            display: block;
+            width: 100%;
+            padding: 12px;
+            border: none;
+            border-radius: 8px;
+            color: white;
+            font-size: 1em;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        
+        .theme-btn:hover {
+            transform: scale(1.02);
+        }
+        
+        .note-box, .warning-box {
+            padding: 12px 15px;
+            border-radius: 8px;
+            margin: 10px 0;
+            font-size: 0.9em;
+            border-left: 4px solid;
+        }
+        
+        .selected-banner {
+            position: fixed;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: #333;
+            color: white;
+            padding: 15px 30px;
+            border-radius: 50px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+            z-index: 1000;
+            display: none;
+        }
+        
+        .selected-banner.show {
+            display: block;
+            animation: slideUp 0.3s ease;
+        }
+        
+        @keyframes slideUp {
+            from { transform: translateX(-50%) translateY(100px); opacity: 0; }
+            to { transform: translateX(-50%) translateY(0); opacity: 1; }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🎨 Q2G Documentation Color Themes</h1>
+        <p>Click on any theme to see the CSS variables. Pick your favorite!</p>
+    </div>
+    
+    <div class="themes-grid">
+        
+        <!-- Theme 1: Ocean Blue -->
+        <div class="theme-card" onclick="selectTheme('Ocean Blue')">
+            <div class="theme-header" style="background: linear-gradient(135deg, #4A90A4 0%, #6BB3C9 100%);">
+                <h2>1. Ocean Blue</h2>
+                <span>Clean, professional, calming</span>
+            </div>
+            <div class="theme-content">
+                <h3 style="color: #4A90A4; border-color: #6BB3C9;">Sample Heading</h3>
+                <p style="color: #4A6670;">This is sample body text showing how content would look with this theme.</p>
+                <div class="color-swatches">
+                    <div class="swatch" style="background: #4A90A4;"></div>
+                    <div class="swatch" style="background: #6BB3C9;"></div>
+                    <div class="swatch" style="background: #E8F4F8;"></div>
+                    <div class="swatch" style="background: #F5FAFB;"></div>
+                    <div class="swatch" style="background: #2C5F6E;"></div>
+                </div>
+                <div class="theme-toc" style="background: linear-gradient(145deg, #F5FAFB 0%, #E8F4F8 100%);">
+                    <ul>
+                        <li><a href="#" style="background: rgba(74,144,164,0.1); color: #4A90A4;">Getting Started</a></li>
+                        <li><a href="#" style="background: rgba(74,144,164,0.1); color: #4A90A4;">Installation</a></li>
+                    </ul>
+                </div>
+                <div class="note-box" style="background: #E8F4F8; border-color: #4A90A4; color: #2C5F6E;">
+                    <strong>Note:</strong> This is an info box example.
+                </div>
+                <button class="theme-btn" style="background: linear-gradient(135deg, #4A90A4 0%, #6BB3C9 100%);">Select This Theme</button>
+            </div>
+        </div>
+        
+        <!-- Theme 2: Forest Green -->
+        <div class="theme-card" onclick="selectTheme('Forest Green')">
+            <div class="theme-header" style="background: linear-gradient(135deg, #2E7D5A 0%, #4CAF7D 100%);">
+                <h2>2. Forest Green</h2>
+                <span>Natural, fresh, trustworthy</span>
+            </div>
+            <div class="theme-content">
+                <h3 style="color: #2E7D5A; border-color: #4CAF7D;">Sample Heading</h3>
+                <p style="color: #3D5A4C;">This is sample body text showing how content would look with this theme.</p>
+                <div class="color-swatches">
+                    <div class="swatch" style="background: #2E7D5A;"></div>
+                    <div class="swatch" style="background: #4CAF7D;"></div>
+                    <div class="swatch" style="background: #E8F5EE;"></div>
+                    <div class="swatch" style="background: #F5FBF8;"></div>
+                    <div class="swatch" style="background: #1D4D38;"></div>
+                </div>
+                <div class="theme-toc" style="background: linear-gradient(145deg, #F5FBF8 0%, #E8F5EE 100%);">
+                    <ul>
+                        <li><a href="#" style="background: rgba(46,125,90,0.1); color: #2E7D5A;">Getting Started</a></li>
+                        <li><a href="#" style="background: rgba(46,125,90,0.1); color: #2E7D5A;">Installation</a></li>
+                    </ul>
+                </div>
+                <div class="note-box" style="background: #E8F5EE; border-color: #2E7D5A; color: #1D4D38;">
+                    <strong>Note:</strong> This is an info box example.
+                </div>
+                <button class="theme-btn" style="background: linear-gradient(135deg, #2E7D5A 0%, #4CAF7D 100%);">Select This Theme</button>
+            </div>
+        </div>
+        
+        <!-- Theme 3: Slate Gray -->
+        <div class="theme-card" onclick="selectTheme('Slate Gray')">
+            <div class="theme-header" style="background: linear-gradient(135deg, #4A5568 0%, #718096 100%);">
+                <h2>3. Slate Gray</h2>
+                <span>Modern, neutral, sophisticated</span>
+            </div>
+            <div class="theme-content">
+                <h3 style="color: #4A5568; border-color: #718096;">Sample Heading</h3>
+                <p style="color: #4A5568;">This is sample body text showing how content would look with this theme.</p>
+                <div class="color-swatches">
+                    <div class="swatch" style="background: #4A5568;"></div>
+                    <div class="swatch" style="background: #718096;"></div>
+                    <div class="swatch" style="background: #EDF2F7;"></div>
+                    <div class="swatch" style="background: #F7FAFC;"></div>
+                    <div class="swatch" style="background: #2D3748;"></div>
+                </div>
+                <div class="theme-toc" style="background: linear-gradient(145deg, #F7FAFC 0%, #EDF2F7 100%);">
+                    <ul>
+                        <li><a href="#" style="background: rgba(74,85,104,0.1); color: #4A5568;">Getting Started</a></li>
+                        <li><a href="#" style="background: rgba(74,85,104,0.1); color: #4A5568;">Installation</a></li>
+                    </ul>
+                </div>
+                <div class="note-box" style="background: #EDF2F7; border-color: #4A5568; color: #2D3748;">
+                    <strong>Note:</strong> This is an info box example.
+                </div>
+                <button class="theme-btn" style="background: linear-gradient(135deg, #4A5568 0%, #718096 100%);">Select This Theme</button>
+            </div>
+        </div>
+        
+        <!-- Theme 4: Warm Terracotta -->
+        <div class="theme-card" onclick="selectTheme('Warm Terracotta')">
+            <div class="theme-header" style="background: linear-gradient(135deg, #C67B5C 0%, #D4967E 100%);">
+                <h2>4. Warm Terracotta</h2>
+                <span>Earthy, warm, inviting</span>
+            </div>
+            <div class="theme-content">
+                <h3 style="color: #C67B5C; border-color: #D4967E;">Sample Heading</h3>
+                <p style="color: #6B4F42;">This is sample body text showing how content would look with this theme.</p>
+                <div class="color-swatches">
+                    <div class="swatch" style="background: #C67B5C;"></div>
+                    <div class="swatch" style="background: #D4967E;"></div>
+                    <div class="swatch" style="background: #FDF5F2;"></div>
+                    <div class="swatch" style="background: #FEF9F7;"></div>
+                    <div class="swatch" style="background: #8B5A42;"></div>
+                </div>
+                <div class="theme-toc" style="background: linear-gradient(145deg, #FEF9F7 0%, #FDF5F2 100%);">
+                    <ul>
+                        <li><a href="#" style="background: rgba(198,123,92,0.1); color: #C67B5C;">Getting Started</a></li>
+                        <li><a href="#" style="background: rgba(198,123,92,0.1); color: #C67B5C;">Installation</a></li>
+                    </ul>
+                </div>
+                <div class="note-box" style="background: #FDF5F2; border-color: #C67B5C; color: #8B5A42;">
+                    <strong>Note:</strong> This is an info box example.
+                </div>
+                <button class="theme-btn" style="background: linear-gradient(135deg, #C67B5C 0%, #D4967E 100%);">Select This Theme</button>
+            </div>
+        </div>
+        
+        <!-- Theme 5: Deep Teal -->
+        <div class="theme-card" onclick="selectTheme('Deep Teal')">
+            <div class="theme-header" style="background: linear-gradient(135deg, #0D7377 0%, #14919B 100%);">
+                <h2>5. Deep Teal</h2>
+                <span>Bold, confident, modern</span>
+            </div>
+            <div class="theme-content">
+                <h3 style="color: #0D7377; border-color: #14919B;">Sample Heading</h3>
+                <p style="color: #2C5456;">This is sample body text showing how content would look with this theme.</p>
+                <div class="color-swatches">
+                    <div class="swatch" style="background: #0D7377;"></div>
+                    <div class="swatch" style="background: #14919B;"></div>
+                    <div class="swatch" style="background: #E6F4F5;"></div>
+                    <div class="swatch" style="background: #F2FAFA;"></div>
+                    <div class="swatch" style="background: #084C4E;"></div>
+                </div>
+                <div class="theme-toc" style="background: linear-gradient(145deg, #F2FAFA 0%, #E6F4F5 100%);">
+                    <ul>
+                        <li><a href="#" style="background: rgba(13,115,119,0.1); color: #0D7377;">Getting Started</a></li>
+                        <li><a href="#" style="background: rgba(13,115,119,0.1); color: #0D7377;">Installation</a></li>
+                    </ul>
+                </div>
+                <div class="note-box" style="background: #E6F4F5; border-color: #0D7377; color: #084C4E;">
+                    <strong>Note:</strong> This is an info box example.
+                </div>
+                <button class="theme-btn" style="background: linear-gradient(135deg, #0D7377 0%, #14919B 100%);">Select This Theme</button>
+            </div>
+        </div>
+        
+        <!-- Theme 6: Soft Coral -->
+        <div class="theme-card" onclick="selectTheme('Soft Coral')">
+            <div class="theme-header" style="background: linear-gradient(135deg, #E07A5F 0%, #F2A490 100%);">
+                <h2>6. Soft Coral</h2>
+                <span>Friendly, approachable, warm</span>
+            </div>
+            <div class="theme-content">
+                <h3 style="color: #E07A5F; border-color: #F2A490;">Sample Heading</h3>
+                <p style="color: #6B4A3E;">This is sample body text showing how content would look with this theme.</p>
+                <div class="color-swatches">
+                    <div class="swatch" style="background: #E07A5F;"></div>
+                    <div class="swatch" style="background: #F2A490;"></div>
+                    <div class="swatch" style="background: #FEF3F0;"></div>
+                    <div class="swatch" style="background: #FFF8F6;"></div>
+                    <div class="swatch" style="background: #A85643;"></div>
+                </div>
+                <div class="theme-toc" style="background: linear-gradient(145deg, #FFF8F6 0%, #FEF3F0 100%);">
+                    <ul>
+                        <li><a href="#" style="background: rgba(224,122,95,0.1); color: #E07A5F;">Getting Started</a></li>
+                        <li><a href="#" style="background: rgba(224,122,95,0.1); color: #E07A5F;">Installation</a></li>
+                    </ul>
+                </div>
+                <div class="note-box" style="background: #FEF3F0; border-color: #E07A5F; color: #A85643;">
+                    <strong>Note:</strong> This is an info box example.
+                </div>
+                <button class="theme-btn" style="background: linear-gradient(135deg, #E07A5F 0%, #F2A490 100%);">Select This Theme</button>
+            </div>
+        </div>
+        
+        <!-- Theme 7: Royal Navy -->
+        <div class="theme-card" onclick="selectTheme('Royal Navy')">
+            <div class="theme-header" style="background: linear-gradient(135deg, #1E3A5F 0%, #3D5A80 100%);">
+                <h2>7. Royal Navy</h2>
+                <span>Professional, authoritative, classic</span>
+            </div>
+            <div class="theme-content">
+                <h3 style="color: #1E3A5F; border-color: #3D5A80;">Sample Heading</h3>
+                <p style="color: #3D4F5F;">This is sample body text showing how content would look with this theme.</p>
+                <div class="color-swatches">
+                    <div class="swatch" style="background: #1E3A5F;"></div>
+                    <div class="swatch" style="background: #3D5A80;"></div>
+                    <div class="swatch" style="background: #E8EEF4;"></div>
+                    <div class="swatch" style="background: #F4F7FA;"></div>
+                    <div class="swatch" style="background: #0F1D2F;"></div>
+                </div>
+                <div class="theme-toc" style="background: linear-gradient(145deg, #F4F7FA 0%, #E8EEF4 100%);">
+                    <ul>
+                        <li><a href="#" style="background: rgba(30,58,95,0.1); color: #1E3A5F;">Getting Started</a></li>
+                        <li><a href="#" style="background: rgba(30,58,95,0.1); color: #1E3A5F;">Installation</a></li>
+                    </ul>
+                </div>
+                <div class="note-box" style="background: #E8EEF4; border-color: #1E3A5F; color: #0F1D2F;">
+                    <strong>Note:</strong> This is an info box example.
+                </div>
+                <button class="theme-btn" style="background: linear-gradient(135deg, #1E3A5F 0%, #3D5A80 100%);">Select This Theme</button>
+            </div>
+        </div>
+        
+        <!-- Theme 8: Sage Green -->
+        <div class="theme-card" onclick="selectTheme('Sage Green')">
+            <div class="theme-header" style="background: linear-gradient(135deg, #7D9D7C 0%, #9DB99D 100%);">
+                <h2>8. Sage Green</h2>
+                <span>Soft, organic, balanced</span>
+            </div>
+            <div class="theme-content">
+                <h3 style="color: #7D9D7C; border-color: #9DB99D;">Sample Heading</h3>
+                <p style="color: #4A5D4A;">This is sample body text showing how content would look with this theme.</p>
+                <div class="color-swatches">
+                    <div class="swatch" style="background: #7D9D7C;"></div>
+                    <div class="swatch" style="background: #9DB99D;"></div>
+                    <div class="swatch" style="background: #F2F6F2;"></div>
+                    <div class="swatch" style="background: #F8FAF8;"></div>
+                    <div class="swatch" style="background: #4E634E;"></div>
+                </div>
+                <div class="theme-toc" style="background: linear-gradient(145deg, #F8FAF8 0%, #F2F6F2 100%);">
+                    <ul>
+                        <li><a href="#" style="background: rgba(125,157,124,0.15); color: #5A755A;">Getting Started</a></li>
+                        <li><a href="#" style="background: rgba(125,157,124,0.15); color: #5A755A;">Installation</a></li>
+                    </ul>
+                </div>
+                <div class="note-box" style="background: #F2F6F2; border-color: #7D9D7C; color: #4E634E;">
+                    <strong>Note:</strong> This is an info box example.
+                </div>
+                <button class="theme-btn" style="background: linear-gradient(135deg, #7D9D7C 0%, #9DB99D 100%);">Select This Theme</button>
+            </div>
+        </div>
+        
+        <!-- Theme 9: Dusty Rose -->
+        <div class="theme-card" onclick="selectTheme('Dusty Rose')">
+            <div class="theme-header" style="background: linear-gradient(135deg, #B5838D 0%, #D4A5A5 100%);">
+                <h2>9. Dusty Rose</h2>
+                <span>Elegant, soft, sophisticated</span>
+            </div>
+            <div class="theme-content">
+                <h3 style="color: #B5838D; border-color: #D4A5A5;">Sample Heading</h3>
+                <p style="color: #6B5055;">This is sample body text showing how content would look with this theme.</p>
+                <div class="color-swatches">
+                    <div class="swatch" style="background: #B5838D;"></div>
+                    <div class="swatch" style="background: #D4A5A5;"></div>
+                    <div class="swatch" style="background: #FAF3F4;"></div>
+                    <div class="swatch" style="background: #FDF8F9;"></div>
+                    <div class="swatch" style="background: #7A5660;"></div>
+                </div>
+                <div class="theme-toc" style="background: linear-gradient(145deg, #FDF8F9 0%, #FAF3F4 100%);">
+                    <ul>
+                        <li><a href="#" style="background: rgba(181,131,141,0.12); color: #B5838D;">Getting Started</a></li>
+                        <li><a href="#" style="background: rgba(181,131,141,0.12); color: #B5838D;">Installation</a></li>
+                    </ul>
+                </div>
+                <div class="note-box" style="background: #FAF3F4; border-color: #B5838D; color: #7A5660;">
+                    <strong>Note:</strong> This is an info box example.
+                </div>
+                <button class="theme-btn" style="background: linear-gradient(135deg, #B5838D 0%, #D4A5A5 100%);">Select This Theme</button>
+            </div>
+        </div>
+        
+        <!-- Theme 10: Golden Sand -->
+        <div class="theme-card" onclick="selectTheme('Golden Sand')">
+            <div class="theme-header" style="background: linear-gradient(135deg, #C9A227 0%, #E0C068 100%);">
+                <h2>10. Golden Sand</h2>
+                <span>Warm, optimistic, energetic</span>
+            </div>
+            <div class="theme-content">
+                <h3 style="color: #A68B1D; border-color: #C9A227;">Sample Heading</h3>
+                <p style="color: #5C5030;">This is sample body text showing how content would look with this theme.</p>
+                <div class="color-swatches">
+                    <div class="swatch" style="background: #C9A227;"></div>
+                    <div class="swatch" style="background: #E0C068;"></div>
+                    <div class="swatch" style="background: #FDF9EE;"></div>
+                    <div class="swatch" style="background: #FEFCF6;"></div>
+                    <div class="swatch" style="background: #7A6318;"></div>
+                </div>
+                <div class="theme-toc" style="background: linear-gradient(145deg, #FEFCF6 0%, #FDF9EE 100%);">
+                    <ul>
+                        <li><a href="#" style="background: rgba(201,162,39,0.12); color: #A68B1D;">Getting Started</a></li>
+                        <li><a href="#" style="background: rgba(201,162,39,0.12); color: #A68B1D;">Installation</a></li>
+                    </ul>
+                </div>
+                <div class="note-box" style="background: #FDF9EE; border-color: #C9A227; color: #7A6318;">
+                    <strong>Note:</strong> This is an info box example.
+                </div>
+                <button class="theme-btn" style="background: linear-gradient(135deg, #C9A227 0%, #E0C068 100%);">Select This Theme</button>
+            </div>
+        </div>
+        
+        <!-- Theme 11: Midnight Purple -->
+        <div class="theme-card" onclick="selectTheme('Midnight Purple')">
+            <div class="theme-header" style="background: linear-gradient(135deg, #5B4B8A 0%, #7E6BAD 100%);">
+                <h2>11. Midnight Purple</h2>
+                <span>Creative, luxurious, unique</span>
+            </div>
+            <div class="theme-content">
+                <h3 style="color: #5B4B8A; border-color: #7E6BAD;">Sample Heading</h3>
+                <p style="color: #4A4260;">This is sample body text showing how content would look with this theme.</p>
+                <div class="color-swatches">
+                    <div class="swatch" style="background: #5B4B8A;"></div>
+                    <div class="swatch" style="background: #7E6BAD;"></div>
+                    <div class="swatch" style="background: #F3F1F8;"></div>
+                    <div class="swatch" style="background: #F9F8FB;"></div>
+                    <div class="swatch" style="background: #3D3260;"></div>
+                </div>
+                <div class="theme-toc" style="background: linear-gradient(145deg, #F9F8FB 0%, #F3F1F8 100%);">
+                    <ul>
+                        <li><a href="#" style="background: rgba(91,75,138,0.1); color: #5B4B8A;">Getting Started</a></li>
+                        <li><a href="#" style="background: rgba(91,75,138,0.1); color: #5B4B8A;">Installation</a></li>
+                    </ul>
+                </div>
+                <div class="note-box" style="background: #F3F1F8; border-color: #5B4B8A; color: #3D3260;">
+                    <strong>Note:</strong> This is an info box example.
+                </div>
+                <button class="theme-btn" style="background: linear-gradient(135deg, #5B4B8A 0%, #7E6BAD 100%);">Select This Theme</button>
+            </div>
+        </div>
+        
+        <!-- Theme 12: Steel Blue -->
+        <div class="theme-card" onclick="selectTheme('Steel Blue')">
+            <div class="theme-header" style="background: linear-gradient(135deg, #4682B4 0%, #6CA0C4 100%);">
+                <h2>12. Steel Blue</h2>
+                <span>Reliable, stable, professional</span>
+            </div>
+            <div class="theme-content">
+                <h3 style="color: #4682B4; border-color: #6CA0C4;">Sample Heading</h3>
+                <p style="color: #3A5570;">This is sample body text showing how content would look with this theme.</p>
+                <div class="color-swatches">
+                    <div class="swatch" style="background: #4682B4;"></div>
+                    <div class="swatch" style="background: #6CA0C4;"></div>
+                    <div class="swatch" style="background: #EDF4F9;"></div>
+                    <div class="swatch" style="background: #F5F9FC;"></div>
+                    <div class="swatch" style="background: #2E5578;"></div>
+                </div>
+                <div class="theme-toc" style="background: linear-gradient(145deg, #F5F9FC 0%, #EDF4F9 100%);">
+                    <ul>
+                        <li><a href="#" style="background: rgba(70,130,180,0.1); color: #4682B4;">Getting Started</a></li>
+                        <li><a href="#" style="background: rgba(70,130,180,0.1); color: #4682B4;">Installation</a></li>
+                    </ul>
+                </div>
+                <div class="note-box" style="background: #EDF4F9; border-color: #4682B4; color: #2E5578;">
+                    <strong>Note:</strong> This is an info box example.
+                </div>
+                <button class="theme-btn" style="background: linear-gradient(135deg, #4682B4 0%, #6CA0C4 100%);">Select This Theme</button>
+            </div>
+        </div>
+        
+        <!-- Theme 13: Olive Branch -->
+        <div class="theme-card" onclick="selectTheme('Olive Branch')">
+            <div class="theme-header" style="background: linear-gradient(135deg, #6B7B3C 0%, #8FA058 100%);">
+                <h2>13. Olive Branch</h2>
+                <span>Natural, grounded, peaceful</span>
+            </div>
+            <div class="theme-content">
+                <h3 style="color: #6B7B3C; border-color: #8FA058;">Sample Heading</h3>
+                <p style="color: #4A5530;">This is sample body text showing how content would look with this theme.</p>
+                <div class="color-swatches">
+                    <div class="swatch" style="background: #6B7B3C;"></div>
+                    <div class="swatch" style="background: #8FA058;"></div>
+                    <div class="swatch" style="background: #F4F6EE;"></div>
+                    <div class="swatch" style="background: #F9FAF6;"></div>
+                    <div class="swatch" style="background: #454F28;"></div>
+                </div>
+                <div class="theme-toc" style="background: linear-gradient(145deg, #F9FAF6 0%, #F4F6EE 100%);">
+                    <ul>
+                        <li><a href="#" style="background: rgba(107,123,60,0.12); color: #6B7B3C;">Getting Started</a></li>
+                        <li><a href="#" style="background: rgba(107,123,60,0.12); color: #6B7B3C;">Installation</a></li>
+                    </ul>
+                </div>
+                <div class="note-box" style="background: #F4F6EE; border-color: #6B7B3C; color: #454F28;">
+                    <strong>Note:</strong> This is an info box example.
+                </div>
+                <button class="theme-btn" style="background: linear-gradient(135deg, #6B7B3C 0%, #8FA058 100%);">Select This Theme</button>
+            </div>
+        </div>
+        
+        <!-- Theme 14: Copper Rust -->
+        <div class="theme-card" onclick="selectTheme('Copper Rust')">
+            <div class="theme-header" style="background: linear-gradient(135deg, #B87333 0%, #D4955A 100%);">
+                <h2>14. Copper Rust</h2>
+                <span>Industrial, bold, vintage</span>
+            </div>
+            <div class="theme-content">
+                <h3 style="color: #B87333; border-color: #D4955A;">Sample Heading</h3>
+                <p style="color: #5C4028;">This is sample body text showing how content would look with this theme.</p>
+                <div class="color-swatches">
+                    <div class="swatch" style="background: #B87333;"></div>
+                    <div class="swatch" style="background: #D4955A;"></div>
+                    <div class="swatch" style="background: #FBF5EF;"></div>
+                    <div class="swatch" style="background: #FDFAF6;"></div>
+                    <div class="swatch" style="background: #7A4D22;"></div>
+                </div>
+                <div class="theme-toc" style="background: linear-gradient(145deg, #FDFAF6 0%, #FBF5EF 100%);">
+                    <ul>
+                        <li><a href="#" style="background: rgba(184,115,51,0.1); color: #B87333;">Getting Started</a></li>
+                        <li><a href="#" style="background: rgba(184,115,51,0.1); color: #B87333;">Installation</a></li>
+                    </ul>
+                </div>
+                <div class="note-box" style="background: #FBF5EF; border-color: #B87333; color: #7A4D22;">
+                    <strong>Note:</strong> This is an info box example.
+                </div>
+                <button class="theme-btn" style="background: linear-gradient(135deg, #B87333 0%, #D4955A 100%);">Select This Theme</button>
+            </div>
+        </div>
+        
+        <!-- Theme 15: Arctic Ice -->
+        <div class="theme-card" onclick="selectTheme('Arctic Ice')">
+            <div class="theme-header" style="background: linear-gradient(135deg, #5DADE2 0%, #85C1E9 100%);">
+                <h2>15. Arctic Ice</h2>
+                <span>Fresh, clean, crisp</span>
+            </div>
+            <div class="theme-content">
+                <h3 style="color: #3498DB; border-color: #5DADE2;">Sample Heading</h3>
+                <p style="color: #2E6A8A;">This is sample body text showing how content would look with this theme.</p>
+                <div class="color-swatches">
+                    <div class="swatch" style="background: #3498DB;"></div>
+                    <div class="swatch" style="background: #5DADE2;"></div>
+                    <div class="swatch" style="background: #EBF5FB;"></div>
+                    <div class="swatch" style="background: #F4FAFE;"></div>
+                    <div class="swatch" style="background: #21618C;"></div>
+                </div>
+                <div class="theme-toc" style="background: linear-gradient(145deg, #F4FAFE 0%, #EBF5FB 100%);">
+                    <ul>
+                        <li><a href="#" style="background: rgba(52,152,219,0.1); color: #3498DB;">Getting Started</a></li>
+                        <li><a href="#" style="background: rgba(52,152,219,0.1); color: #3498DB;">Installation</a></li>
+                    </ul>
+                </div>
+                <div class="note-box" style="background: #EBF5FB; border-color: #3498DB; color: #21618C;">
+                    <strong>Note:</strong> This is an info box example.
+                </div>
+                <button class="theme-btn" style="background: linear-gradient(135deg, #3498DB 0%, #5DADE2 100%);">Select This Theme</button>
+            </div>
+        </div>
+        
+        <!-- Theme 16: Charcoal -->
+        <div class="theme-card" onclick="selectTheme('Charcoal')">
+            <div class="theme-header" style="background: linear-gradient(135deg, #2C3E50 0%, #4A6278 100%);">
+                <h2>16. Charcoal</h2>
+                <span>Sleek, minimal, powerful</span>
+            </div>
+            <div class="theme-content">
+                <h3 style="color: #2C3E50; border-color: #4A6278;">Sample Heading</h3>
+                <p style="color: #34495E;">This is sample body text showing how content would look with this theme.</p>
+                <div class="color-swatches">
+                    <div class="swatch" style="background: #2C3E50;"></div>
+                    <div class="swatch" style="background: #4A6278;"></div>
+                    <div class="swatch" style="background: #ECF0F1;"></div>
+                    <div class="swatch" style="background: #F8F9F9;"></div>
+                    <div class="swatch" style="background: #1A252F;"></div>
+                </div>
+                <div class="theme-toc" style="background: linear-gradient(145deg, #F8F9F9 0%, #ECF0F1 100%);">
+                    <ul>
+                        <li><a href="#" style="background: rgba(44,62,80,0.08); color: #2C3E50;">Getting Started</a></li>
+                        <li><a href="#" style="background: rgba(44,62,80,0.08); color: #2C3E50;">Installation</a></li>
+                    </ul>
+                </div>
+                <div class="note-box" style="background: #ECF0F1; border-color: #2C3E50; color: #1A252F;">
+                    <strong>Note:</strong> This is an info box example.
+                </div>
+                <button class="theme-btn" style="background: linear-gradient(135deg, #2C3E50 0%, #4A6278 100%);">Select This Theme</button>
+            </div>
+        </div>
+        
+        <!-- Theme 17: Mint Fresh -->
+        <div class="theme-card" onclick="selectTheme('Mint Fresh')">
+            <div class="theme-header" style="background: linear-gradient(135deg, #26A69A 0%, #4DB6AC 100%);">
+                <h2>17. Mint Fresh</h2>
+                <span>Refreshing, modern, lively</span>
+            </div>
+            <div class="theme-content">
+                <h3 style="color: #26A69A; border-color: #4DB6AC;">Sample Heading</h3>
+                <p style="color: #2E5D58;">This is sample body text showing how content would look with this theme.</p>
+                <div class="color-swatches">
+                    <div class="swatch" style="background: #26A69A;"></div>
+                    <div class="swatch" style="background: #4DB6AC;"></div>
+                    <div class="swatch" style="background: #E8F6F5;"></div>
+                    <div class="swatch" style="background: #F2FBFA;"></div>
+                    <div class="swatch" style="background: #1A7068;"></div>
+                </div>
+                <div class="theme-toc" style="background: linear-gradient(145deg, #F2FBFA 0%, #E8F6F5 100%);">
+                    <ul>
+                        <li><a href="#" style="background: rgba(38,166,154,0.1); color: #26A69A;">Getting Started</a></li>
+                        <li><a href="#" style="background: rgba(38,166,154,0.1); color: #26A69A;">Installation</a></li>
+                    </ul>
+                </div>
+                <div class="note-box" style="background: #E8F6F5; border-color: #26A69A; color: #1A7068;">
+                    <strong>Note:</strong> This is an info box example.
+                </div>
+                <button class="theme-btn" style="background: linear-gradient(135deg, #26A69A 0%, #4DB6AC 100%);">Select This Theme</button>
+            </div>
+        </div>
+        
+        <!-- Theme 18: Plum -->
+        <div class="theme-card" onclick="selectTheme('Plum')">
+            <div class="theme-header" style="background: linear-gradient(135deg, #8E4585 0%, #A86DA3 100%);">
+                <h2>18. Plum</h2>
+                <span>Rich, distinctive, creative</span>
+            </div>
+            <div class="theme-content">
+                <h3 style="color: #8E4585; border-color: #A86DA3;">Sample Heading</h3>
+                <p style="color: #5A3555;">This is sample body text showing how content would look with this theme.</p>
+                <div class="color-swatches">
+                    <div class="swatch" style="background: #8E4585;"></div>
+                    <div class="swatch" style="background: #A86DA3;"></div>
+                    <div class="swatch" style="background: #F8F0F7;"></div>
+                    <div class="swatch" style="background: #FCF7FB;"></div>
+                    <div class="swatch" style="background: #5E2E58;"></div>
+                </div>
+                <div class="theme-toc" style="background: linear-gradient(145deg, #FCF7FB 0%, #F8F0F7 100%);">
+                    <ul>
+                        <li><a href="#" style="background: rgba(142,69,133,0.1); color: #8E4585;">Getting Started</a></li>
+                        <li><a href="#" style="background: rgba(142,69,133,0.1); color: #8E4585;">Installation</a></li>
+                    </ul>
+                </div>
+                <div class="note-box" style="background: #F8F0F7; border-color: #8E4585; color: #5E2E58;">
+                    <strong>Note:</strong> This is an info box example.
+                </div>
+                <button class="theme-btn" style="background: linear-gradient(135deg, #8E4585 0%, #A86DA3 100%);">Select This Theme</button>
+            </div>
+        </div>
+        
+        <!-- Theme 19: Burnt Sienna -->
+        <div class="theme-card" onclick="selectTheme('Burnt Sienna')">
+            <div class="theme-header" style="background: linear-gradient(135deg, #A0522D 0%, #C4724A 100%);">
+                <h2>19. Burnt Sienna</h2>
+                <span>Rustic, warm, authentic</span>
+            </div>
+            <div class="theme-content">
+                <h3 style="color: #A0522D; border-color: #C4724A;">Sample Heading</h3>
+                <p style="color: #5C3A25;">This is sample body text showing how content would look with this theme.</p>
+                <div class="color-swatches">
+                    <div class="swatch" style="background: #A0522D;"></div>
+                    <div class="swatch" style="background: #C4724A;"></div>
+                    <div class="swatch" style="background: #FAF3EF;"></div>
+                    <div class="swatch" style="background: #FDF9F6;"></div>
+                    <div class="swatch" style="background: #6B371E;"></div>
+                </div>
+                <div class="theme-toc" style="background: linear-gradient(145deg, #FDF9F6 0%, #FAF3EF 100%);">
+                    <ul>
+                        <li><a href="#" style="background: rgba(160,82,45,0.1); color: #A0522D;">Getting Started</a></li>
+                        <li><a href="#" style="background: rgba(160,82,45,0.1); color: #A0522D;">Installation</a></li>
+                    </ul>
+                </div>
+                <div class="note-box" style="background: #FAF3EF; border-color: #A0522D; color: #6B371E;">
+                    <strong>Note:</strong> This is an info box example.
+                </div>
+                <button class="theme-btn" style="background: linear-gradient(135deg, #A0522D 0%, #C4724A 100%);">Select This Theme</button>
+            </div>
+        </div>
+        
+        <!-- Theme 20: Emerald -->
+        <div class="theme-card" onclick="selectTheme('Emerald')">
+            <div class="theme-header" style="background: linear-gradient(135deg, #2ECC71 0%, #58D68D 100%);">
+                <h2>20. Emerald</h2>
+                <span>Vibrant, fresh, positive</span>
+            </div>
+            <div class="theme-content">
+                <h3 style="color: #27AE60; border-color: #2ECC71;">Sample Heading</h3>
+                <p style="color: #1E6B42;">This is sample body text showing how content would look with this theme.</p>
+                <div class="color-swatches">
+                    <div class="swatch" style="background: #27AE60;"></div>
+                    <div class="swatch" style="background: #2ECC71;"></div>
+                    <div class="swatch" style="background: #E9F7EF;"></div>
+                    <div class="swatch" style="background: #F2FCF6;"></div>
+                    <div class="swatch" style="background: #196F3D;"></div>
+                </div>
+                <div class="theme-toc" style="background: linear-gradient(145deg, #F2FCF6 0%, #E9F7EF 100%);">
+                    <ul>
+                        <li><a href="#" style="background: rgba(39,174,96,0.1); color: #27AE60;">Getting Started</a></li>
+                        <li><a href="#" style="background: rgba(39,174,96,0.1); color: #27AE60;">Installation</a></li>
+                    </ul>
+                </div>
+                <div class="note-box" style="background: #E9F7EF; border-color: #27AE60; color: #196F3D;">
+                    <strong>Note:</strong> This is an info box example.
+                </div>
+                <button class="theme-btn" style="background: linear-gradient(135deg, #27AE60 0%, #2ECC71 100%);">Select This Theme</button>
+            </div>
+        </div>
+        
+    </div>
+    
+    <div class="selected-banner" id="selectedBanner">
+        <span id="selectedThemeName"></span> selected! Tell me which one you want.
+    </div>
+    
+    <script>
+        function selectTheme(themeName) {
+            var banner = document.getElementById('selectedBanner');
+            var nameSpan = document.getElementById('selectedThemeName');
+            nameSpan.textContent = '✓ ' + themeName;
+            banner.classList.add('show');
+            
+            setTimeout(function() {
+                banner.classList.remove('show');
+            }, 3000);
+        }
+    </script>
+</body>
+</html>
